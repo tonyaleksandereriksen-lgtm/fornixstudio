@@ -1,0 +1,729 @@
+diff -ruN /mnt/data/fornix_audit_baseline/README.md /mnt/data/fornix_audit_current/README.md
+--- /mnt/data/fornix_audit_baseline/README.md	2026-04-03 22:03:03.907897371 +0000
++++ /mnt/data/fornix_audit_current/README.md	2026-04-03 22:01:18.998072693 +0000
+@@ -9,7 +9,7 @@
+ - **Workspace/file/git/project tools:** usable
+ - **Hardstyle/session/fallback tools:** wired and usable
+ - **File-based production package generator:** usable
+-- **Selective regeneration + package summary:** usable
++- **Selective regeneration + preview + package summary:** usable
+ - **Studio One native bridge:** **experimental / unverified**, now with runtime probe + handshake state
+ 
+ The uploaded diagnostics do **not** show the Fornix extension as loaded inside Studio One, and the repo files do not prove that the current `manifest.json` format is a valid Studio One extension manifest. Treat live DAW control as optional and experimental. Use fallback workflows first.
+@@ -53,6 +53,7 @@
+ ## What is strong right now
+ 
+ - Standardized file-based production package generation for Package Metadata, Project Plan, Routing Sheet, Automation Blueprint, Mix Report, Sound Design Pack, and Producer Checklist
++- Read-only package update preview with explicit regeneration recommendations before any files are rewritten
+ - Selective regeneration of one package document family at a time from an existing package
+ - Read-only package summary/introspection for existing Fornix packages
+ - Hardstyle-specific package content tailored for cinematic intros, anti-climax planning, euphoric/screech lead work, and actionable mix fixes
+@@ -117,6 +118,7 @@
+ 
+ - generate the full package from a track brief
+ - read an existing package and summarize its current state
++- preview which sections should likely be regenerated when profile inputs change, without writing files
+ - regenerate one selected document family at a time while preserving untouched files
+ - update package metadata timestamps and revision fields without claiming any live Studio One control
+ 
+diff -ruN /mnt/data/fornix_audit_baseline/src/services/production-package-update.ts /mnt/data/fornix_audit_current/src/services/production-package-update.ts
+--- /mnt/data/fornix_audit_baseline/src/services/production-package-update.ts	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/fornix_audit_current/src/services/production-package-update.ts	2026-04-03 21:58:59.622899535 +0000
+@@ -0,0 +1,298 @@
++
++// ─── Fornix Studio MCP – Production Package Update Preview Helpers ───────────
++//
++// Read-only change detection and regeneration recommendation logic for existing
++// file-based production packages. No Studio One bridge dependency.
++
++import type {
++  PackageSectionId,
++  ProductionPackageInput,
++  ProductionPackageMetadata,
++} from "./production-package.js";
++
++export interface PackageProfileFieldChange {
++  field: string;
++  previousValue: unknown;
++  nextValue: unknown;
++}
++
++export interface PackageSectionRecommendation {
++  section: PackageSectionId;
++  reasons: string[];
++}
++
++type ComparablePackageData = Pick<
++  ProductionPackageMetadata,
++  | "trackName"
++  | "artistName"
++  | "tempo"
++  | "keySignature"
++  | "styleVariant"
++  | "leadStyle"
++  | "dropStrategy"
++  | "energyProfile"
++  | "targetBars"
++  | "creativeBrief"
++  | "mixConcerns"
++  | "signatureHooks"
++  | "mood"
++  | "focus"
++  | "concerns"
++  | "substyle"
++  | "kickStyle"
++  | "antiClimaxStyle"
++  | "arrangementFocus"
++  | "vocalMode"
++  | "djUtilityPriority"
++  | "referenceNotes"
++  | "sectionGoals"
++  | "cinematicIntensity"
++  | "aggressionLevel"
++  | "emotionalTone"
++>;
++
++type PackageFieldName = keyof ComparablePackageData;
++
++const TRACK_PROFILE_FIELDS: PackageFieldName[] = [
++  "trackName",
++  "artistName",
++  "tempo",
++  "keySignature",
++  "styleVariant",
++  "leadStyle",
++  "dropStrategy",
++  "energyProfile",
++  "targetBars",
++  "creativeBrief",
++  "mixConcerns",
++  "signatureHooks",
++  "mood",
++  "focus",
++  "concerns",
++  "substyle",
++  "kickStyle",
++  "antiClimaxStyle",
++  "arrangementFocus",
++  "vocalMode",
++  "djUtilityPriority",
++  "referenceNotes",
++  "sectionGoals",
++  "cinematicIntensity",
++  "aggressionLevel",
++  "emotionalTone",
++];
++
++const SECTION_REASON_MAP: Record<PackageFieldName, Array<{ section: PackageSectionId; reason: string }>> = {
++  trackName: [
++    { section: "project_plan", reason: "Track identity appears in the Project Plan header and arrangement framing." },
++    { section: "mix", reason: "Track identity appears in the Mix Report header." },
++    { section: "sound_design", reason: "Track identity appears in the Sound Design Pack header." },
++    { section: "checklist", reason: "Track identity appears in the Producer Checklist header." },
++    { section: "routing", reason: "Track identity appears in the Routing Sheet header." },
++    { section: "automation", reason: "Track identity appears in the Automation Blueprint header." },
++  ],
++  artistName: [
++    { section: "project_plan", reason: "Artist identity appears in the package overview and planning context." },
++    { section: "mix", reason: "Artist identity appears in the Mix Report header." },
++  ],
++  tempo: [
++    { section: "project_plan", reason: "Tempo affects arrangement pacing and section payload density." },
++    { section: "automation", reason: "Tempo affects rate-based build and release timing decisions." },
++    { section: "mix", reason: "Tempo shifts transition timing and tail masking risk." },
++  ],
++  keySignature: [
++    { section: "project_plan", reason: "Tonal center shapes motif planning and emotional release." },
++    { section: "sound_design", reason: "Key context changes synthesis register and layer placement decisions." },
++  ],
++  styleVariant: [
++    { section: "project_plan", reason: "Style variant changes the overall structure and payoff strategy." },
++    { section: "routing", reason: "Style variant changes bus emphasis and space allocation." },
++    { section: "automation", reason: "Style variant changes tension and release automation priorities." },
++    { section: "mix", reason: "Style variant changes the most likely hardstyle mix risks." },
++    { section: "sound_design", reason: "Style variant changes lead, screech, and atmosphere design targets." },
++    { section: "checklist", reason: "Style variant changes the final pass/fail checks." },
++  ],
++  leadStyle: [
++    { section: "project_plan", reason: "Lead style changes where melodic or hostile focus should land." },
++    { section: "routing", reason: "Lead style changes lead bus grouping and effects emphasis." },
++    { section: "mix", reason: "Lead style changes harshness, width, and center-lane risk." },
++    { section: "sound_design", reason: "Lead style directly changes synthesis, layering, and movement decisions." },
++  ],
++  dropStrategy: [
++    { section: "project_plan", reason: "Drop strategy changes the section-to-section payoff order." },
++    { section: "automation", reason: "Drop strategy changes build, mute, and release automation moves." },
++    { section: "mix", reason: "Drop strategy changes where contrast and impact risks show up." },
++  ],
++  energyProfile: [
++    { section: "project_plan", reason: "Energy profile changes pacing, reveal timing, and section weighting." },
++    { section: "automation", reason: "Energy profile changes tension-curve automation planning." },
++    { section: "checklist", reason: "Energy profile changes what to validate before the final arrangement pass." },
++  ],
++  targetBars: [
++    { section: "project_plan", reason: "Target bar count changes arrangement scope and section lengths." },
++    { section: "checklist", reason: "Target bar count affects arrangement completion checks." },
++  ],
++  creativeBrief: [
++    { section: "project_plan", reason: "Creative brief directly changes production priorities and section language." },
++    { section: "sound_design", reason: "Creative brief changes texture and layer intent." },
++    { section: "checklist", reason: "Creative brief changes what should pass the final creative review." },
++  ],
++  mixConcerns: [
++    { section: "mix", reason: "Explicit mix concerns should change the action list directly." },
++    { section: "checklist", reason: "Explicit mix concerns should surface in the final QA checks." },
++  ],
++  signatureHooks: [
++    { section: "project_plan", reason: "Signature hooks change section priorities and reveal strategy." },
++    { section: "sound_design", reason: "Signature hooks change the main synthesis targets." },
++    { section: "checklist", reason: "Signature hooks should be explicitly validated before finish." },
++  ],
++  mood: [
++    { section: "project_plan", reason: "Mood changes the cinematic and emotional section framing." },
++    { section: "sound_design", reason: "Mood changes timbre density and atmosphere design choices." },
++  ],
++  focus: [
++    { section: "project_plan", reason: "Primary focus changes the plan priorities." },
++    { section: "mix", reason: "Primary focus changes which mix risks deserve the strongest attention." },
++    { section: "checklist", reason: "Primary focus changes what the package should validate as done." },
++  ],
++  concerns: [
++    { section: "mix", reason: "General concerns should shift the mix action priorities." },
++    { section: "checklist", reason: "General concerns should remain visible in producer QA." },
++  ],
++  substyle: [
++    { section: "project_plan", reason: "Substyle changes section architecture and contrast expectations." },
++    { section: "routing", reason: "Substyle changes bus grouping priorities and spatial restraint." },
++    { section: "automation", reason: "Substyle changes how aggressively tension moves should hit." },
++    { section: "mix", reason: "Substyle changes likely clash points and impact discipline." },
++    { section: "sound_design", reason: "Substyle changes lead, screech, and atmosphere targets." },
++    { section: "checklist", reason: "Substyle changes the final producer checks." },
++  ],
++  kickStyle: [
++    { section: "routing", reason: "Kick style changes kick bus shaping, tail control, and sidechain intent." },
++    { section: "mix", reason: "Kick style changes tail masking, tok definition, and mono discipline risks." },
++    { section: "sound_design", reason: "Kick style changes layer design and transient strategy." },
++  ],
++  antiClimaxStyle: [
++    { section: "project_plan", reason: "Anti-climax style changes how the hostile section is staged." },
++    { section: "automation", reason: "Anti-climax style changes filter, distortion, and tension automation moves." },
++    { section: "mix", reason: "Anti-climax style changes screech pressure and kick-space risk." },
++    { section: "sound_design", reason: "Anti-climax style changes screech and bass design direction." },
++  ],
++  arrangementFocus: [
++    { section: "project_plan", reason: "Arrangement focus directly changes the structural priorities." },
++    { section: "automation", reason: "Arrangement focus changes tension and transition automation planning." },
++    { section: "checklist", reason: "Arrangement focus changes the final arrangement validation." },
++  ],
++  vocalMode: [
++    { section: "routing", reason: "Vocal mode changes center-lane bus planning and send discipline." },
++    { section: "mix", reason: "Vocal mode changes center clarity, ducking, and masking risks." },
++    { section: "sound_design", reason: "Vocal mode changes how lead and FX layers must leave room." },
++    { section: "checklist", reason: "Vocal mode changes clarity and intelligibility checks." },
++    { section: "project_plan", reason: "Vocal mode changes breakdown and hook staging." },
++  ],
++  djUtilityPriority: [
++    { section: "project_plan", reason: "DJ utility priority changes intro/outro planning and transition usefulness." },
++    { section: "routing", reason: "DJ utility priority changes FX, drums, and outro routing discipline." },
++    { section: "checklist", reason: "DJ utility priority changes transition-readiness checks." },
++  ],
++  referenceNotes: [
++    { section: "project_plan", reason: "Reference notes should change section planning language." },
++    { section: "sound_design", reason: "Reference notes should change synthesis and layering direction." },
++    { section: "checklist", reason: "Reference notes should remain visible in producer validation." },
++  ],
++  sectionGoals: [
++    { section: "project_plan", reason: "Section goals directly affect the arrangement plan." },
++    { section: "automation", reason: "Section goals should change section-specific automation moves." },
++    { section: "checklist", reason: "Section goals should be validated before finish." },
++  ],
++  cinematicIntensity: [
++    { section: "project_plan", reason: "Cinematic intensity changes intro and breakdown architecture." },
++    { section: "automation", reason: "Cinematic intensity changes riser, filter, and impact automation weight." },
++    { section: "sound_design", reason: "Cinematic intensity changes atmosphere, impacts, and transition layer design." },
++    { section: "mix", reason: "Cinematic intensity changes wash, transition, and low-mid buildup risks." },
++  ],
++  aggressionLevel: [
++    { section: "project_plan", reason: "Aggression level changes drop pressure and anti-climax intensity." },
++    { section: "automation", reason: "Aggression level changes distortion, filter, and dynamic automation depth." },
++    { section: "mix", reason: "Aggression level changes harshness and density risks." },
++    { section: "sound_design", reason: "Aggression level changes screech and transient design decisions." },
++  ],
++  emotionalTone: [
++    { section: "project_plan", reason: "Emotional tone changes breakdown and payoff direction." },
++    { section: "sound_design", reason: "Emotional tone changes lead timbre and pad support." },
++  ],
++};
++
++function normalizeComparableValue(value: unknown): unknown {
++  if (Array.isArray(value)) {
++    return [...value];
++  }
++
++  if (value && typeof value === "object") {
++    return Object.fromEntries(
++      Object.entries(value as Record<string, unknown>)
++        .sort(([a], [b]) => a.localeCompare(b)),
++    );
++  }
++
++  return value ?? null;
++}
++
++function comparableEquals(a: unknown, b: unknown): boolean {
++  return JSON.stringify(normalizeComparableValue(a)) === JSON.stringify(normalizeComparableValue(b));
++}
++
++export function diffPackageProfile(
++  previous: ProductionPackageMetadata,
++  next: ProductionPackageInput | ProductionPackageMetadata,
++): PackageProfileFieldChange[] {
++  return TRACK_PROFILE_FIELDS.flatMap((field) => {
++    const previousValue = normalizeComparableValue(previous[field]);
++    const nextValue = normalizeComparableValue(next[field]);
++
++    if (comparableEquals(previousValue, nextValue)) {
++      return [];
++    }
++
++    return [{
++      field,
++      previousValue,
++      nextValue,
++    }];
++  });
++}
++
++export function recommendPackageSections(
++  changes: PackageProfileFieldChange[],
++): PackageSectionRecommendation[] {
++  const sectionReasons = new Map<PackageSectionId, Set<string>>();
++
++  for (const change of changes) {
++    const field = change.field as PackageFieldName;
++    const mappings = SECTION_REASON_MAP[field] ?? [];
++
++    for (const mapping of mappings) {
++      const existing = sectionReasons.get(mapping.section) ?? new Set<string>();
++      existing.add(`${field}: ${mapping.reason}`);
++      sectionReasons.set(mapping.section, existing);
++    }
++  }
++
++  return Array.from(sectionReasons.entries())
++    .map(([section, reasons]) => ({
++      section,
++      reasons: Array.from(reasons),
++    }))
++    .sort((a, b) => {
++      const reasonDiff = b.reasons.length - a.reasons.length;
++      if (reasonDiff !== 0) return reasonDiff;
++      return a.section.localeCompare(b.section);
++    });
++}
++
++export function getRecommendationReasonsForSection(
++  section: PackageSectionId,
++  recommendations: PackageSectionRecommendation[],
++): string[] {
++  return recommendations.find((item) => item.section === section)?.reasons ?? [];
++}
+diff -ruN /mnt/data/fornix_audit_baseline/src/services/production-package.ts /mnt/data/fornix_audit_current/src/services/production-package.ts
+--- /mnt/data/fornix_audit_baseline/src/services/production-package.ts	2026-04-03 22:03:03.905382671 +0000
++++ /mnt/data/fornix_audit_current/src/services/production-package.ts	2026-04-03 21:59:47.929988284 +0000
+@@ -4,6 +4,13 @@
+ import fs from "fs";
+ import path from "path";
+ import { SERVER_VERSION } from "../constants.js";
++import {
++  diffPackageProfile,
++  getRecommendationReasonsForSection,
++  recommendPackageSections,
++  type PackageProfileFieldChange,
++  type PackageSectionRecommendation,
++} from "./production-package-update.js";
+ 
+ export type StyleVariant =
+   | "cinematic-euphoric"
+@@ -168,6 +175,25 @@
+   metadataPath: string;
+   metadata: ProductionPackageMetadata;
+   mixActions: MixAction[];
++  changedProfileFields: PackageProfileFieldChange[];
++  sectionRecommendationReasons: string[];
++  metadataUpdatedFields: string[];
++}
++
++export interface PreviewPackageUpdateInput extends Partial<Omit<ProductionPackageInput, "outputDir">> {
++  outputDir?: string;
++  packagePath?: string;
++  trackSlug?: string;
++}
++
++export interface PackageUpdatePreviewResult {
++  packageRoot: string;
++  packageSummary: ProductionPackageSummary;
++  targetPackagePath: string;
++  changedProfileFields: PackageProfileFieldChange[];
++  recommendedSections: PackageSectionId[];
++  sectionRecommendations: PackageSectionRecommendation[];
++  metadataWouldChange: boolean;
+ }
+ 
+ export interface PackageLocatorInput {
+@@ -181,6 +207,7 @@
+ export const PACKAGE_FORMAT_VERSION = "1.1.0";
+ export const PACKAGE_GENERATOR_TOOL = "fornix_generate_production_package";
+ export const PACKAGE_REGEN_TOOL = "fornix_regenerate_package_section";
++export const PACKAGE_PREVIEW_TOOL = "fornix_preview_package_update";
+ 
+ export const PACKAGE_METADATA_LAYOUT = {
+   dir: "00_Metadata",
+@@ -1451,6 +1478,38 @@
+ }
+ 
+ 
++function preparePackageUpdate(
++  metadata: ProductionPackageMetadata,
++  updates: Partial<Omit<PreviewPackageUpdateInput, "packagePath" | "trackSlug" | "outputDir">>,
++  outputDir: string,
++) {
++  const mergedInput = mergeInputOverMetadata(metadata, updates, outputDir);
++  const changedProfileFields = diffPackageProfile(metadata, mergedInput);
++  const sectionRecommendations = recommendPackageSections(changedProfileFields);
++
++  return {
++    mergedInput,
++    changedProfileFields,
++    sectionRecommendations,
++  };
++}
++
++function collectMetadataUpdatedFields(
++  previous: ProductionPackageMetadata,
++  next: ProductionPackageMetadata,
++): string[] {
++  const changedFields = diffPackageProfile(previous, next).map((change) => change.field);
++  const lifecycleFields = [
++    "generatorTool",
++    "generatorVersion",
++    "lastUpdatedTimestamp",
++    "updatedSections",
++    "packageFormatVersion",
++  ].filter((field) => JSON.stringify(previous[field as keyof ProductionPackageMetadata] ?? null)
++    !== JSON.stringify(next[field as keyof ProductionPackageMetadata] ?? null));
++
++  return Array.from(new Set([...changedFields, ...lifecycleFields]));
++}
+ 
+ function readMetadataFile(metadataPath: string): ProductionPackageMetadata | null {
+   if (!fs.existsSync(metadataPath)) return null;
+@@ -1567,6 +1626,28 @@
+ }
+ 
+ 
++export function previewPackageUpdate(input: PreviewPackageUpdateInput): PackageUpdatePreviewResult {
++  const packageRoot = resolvePackageRoot(input);
++  const summary = getPackageSummary({ packagePath: packageRoot });
++
++  if (!summary.metadata) {
++    throw new Error("Package metadata is missing. Generate the package first so preview can stay honest.");
++  }
++
++  const outputDir = outputDirFromPackageRoot(packageRoot);
++  const { changedProfileFields, sectionRecommendations } = preparePackageUpdate(summary.metadata, input, outputDir);
++
++  return {
++    packageRoot,
++    packageSummary: summary,
++    targetPackagePath: packageRoot,
++    changedProfileFields,
++    recommendedSections: sectionRecommendations.map((item) => item.section),
++    sectionRecommendations,
++    metadataWouldChange: changedProfileFields.length > 0,
++  };
++}
++
+ export function buildProductionPackageContents(input: ProductionPackageInput): Omit<ProductionPackageResult, "packageRoot" | "metadataPath" | "metadata"> & {
+   packageRoot: string;
+   metadataPath: string;
+@@ -1620,7 +1701,7 @@
+   }
+ 
+   const outputDir = outputDirFromPackageRoot(packageRoot);
+-  const mergedInput = mergeInputOverMetadata(summary.metadata, input, outputDir);
++  const { mergedInput, changedProfileFields, sectionRecommendations } = preparePackageUpdate(summary.metadata, input, outputDir);
+   const generatedAt = new Date().toISOString();
+   const mixActions = buildMixActions(mergedInput);
+   const layoutKey = SECTION_LAYOUT_BY_ID[section].key;
+@@ -1647,6 +1728,9 @@
+     .map((key) => getDocumentPath(packageRoot, key))
+     .filter((filePath) => fs.existsSync(filePath));
+ 
++  const sectionRecommendationReasons = getRecommendationReasonsForSection(section, sectionRecommendations);
++  const metadataUpdatedFields = collectMetadataUpdatedFields(summary.metadata, metadata);
++
+   return {
+     packageRoot,
+     packageSummary,
+@@ -1656,5 +1740,8 @@
+     metadataPath,
+     metadata,
+     mixActions,
++    changedProfileFields,
++    sectionRecommendationReasons,
++    metadataUpdatedFields,
+   };
+ }
+diff -ruN /mnt/data/fornix_audit_baseline/src/services/status-server.ts /mnt/data/fornix_audit_current/src/services/status-server.ts
+--- /mnt/data/fornix_audit_baseline/src/services/status-server.ts	2026-04-03 22:03:03.905882300 +0000
++++ /mnt/data/fornix_audit_current/src/services/status-server.ts	2026-04-03 22:01:02.385229845 +0000
+@@ -101,6 +101,7 @@
+ 
+   // Production Package
+   { name: "fornix_generate_production_package", family: "Production Package", readOnly: false },
++  { name: "fornix_preview_package_update",      family: "Production Package", readOnly: true  },
+   { name: "fornix_regenerate_package_section",  family: "Production Package", readOnly: false },
+   { name: "fornix_get_package_summary",         family: "Production Package", readOnly: true  },
+   { name: "fornix_generate_mix_actions",        family: "Mix",                readOnly: false },
+diff -ruN /mnt/data/fornix_audit_baseline/src/tools/production-package.ts /mnt/data/fornix_audit_current/src/tools/production-package.ts
+--- /mnt/data/fornix_audit_baseline/src/tools/production-package.ts	2026-04-03 22:03:03.906832501 +0000
++++ /mnt/data/fornix_audit_current/src/tools/production-package.ts	2026-04-03 22:00:27.286056941 +0000
+@@ -15,9 +15,11 @@
+   type RegeneratePackageSectionInput,
+   PACKAGE_GENERATOR_TOOL,
+   PACKAGE_METADATA_LAYOUT,
++  PACKAGE_PREVIEW_TOOL,
+   PACKAGE_REGEN_TOOL,
+   buildMixActions,
+   getPackageSummary,
++  previewPackageUpdate,
+   regenerateProductionPackageSection,
+   renderMixActionsMarkdown,
+   slugifyTrackName,
+@@ -140,6 +142,56 @@
+ });
+ 
+ 
++const packagePreviewShape = {
++  packagePath: z.string().optional().describe("Existing package root, e.g. /workspace/Fornix/track-slug"),
++  outputDir: z.string().optional().describe("Base output directory if packagePath is not provided"),
++  trackName: z.string().min(1).optional().describe("Track name used to locate the package when packagePath is omitted"),
++  trackSlug: z.string().min(1).optional().describe("Track slug used to locate the package when packagePath is omitted"),
++  artistName: z.string().optional(),
++  tempo: z.number().int().min(135).max(170).optional(),
++  keySignature: z.string().optional(),
++  styleVariant: styleVariantSchema.optional(),
++  leadStyle: leadStyleSchema.optional(),
++  dropStrategy: dropStrategySchema.optional(),
++  energyProfile: energyProfileSchema.optional(),
++  targetBars: z.number().int().min(128).max(256).optional(),
++  creativeBrief: z.string().optional(),
++  mixConcerns: z.array(z.string()).optional(),
++  signatureHooks: z.array(z.string()).optional(),
++  mood: z.string().optional(),
++  focus: z.string().optional(),
++  concerns: z.array(z.string()).optional(),
++  substyle: z.string().optional(),
++  kickStyle: z.string().optional(),
++  antiClimaxStyle: z.string().optional(),
++  arrangementFocus: z.string().optional(),
++  vocalMode: z.string().optional(),
++  djUtilityPriority: z.string().optional(),
++  referenceNotes: z.array(z.string()).optional(),
++  sectionGoals: z.record(z.string()).optional(),
++  cinematicIntensity: z.string().optional(),
++  aggressionLevel: z.string().optional(),
++  emotionalTone: z.string().optional(),
++};
++
++const packagePreviewSchema = z.object(packagePreviewShape).superRefine((input, ctx) => {
++  if (!input.packagePath && !input.outputDir) {
++    ctx.addIssue({
++      code: z.ZodIssueCode.custom,
++      message: "Provide packagePath or outputDir.",
++      path: ["packagePath"],
++    });
++  }
++
++  if (!input.packagePath && !input.trackName && !input.trackSlug) {
++    ctx.addIssue({
++      code: z.ZodIssueCode.custom,
++      message: "When packagePath is omitted, provide trackName or trackSlug.",
++      path: ["trackName"],
++    });
++  }
++});
++
+ const packageLocatorInputShape = {
+   packagePath: z.string().optional().describe("Existing package root, e.g. /workspace/Fornix/track-slug"),
+   outputDir: z.string().optional().describe("Base output directory if packagePath is not provided"),
+@@ -359,6 +411,65 @@
+   });
+ 
+ 
++  server.registerTool("fornix_preview_package_update", {
++    title: "Preview Package Update",
++    description:
++      "Read an existing file-based Fornix production package, compare revised profile inputs against Package_Metadata.json, " +
++      "and preview which sections would likely need regeneration before any files are rewritten. Read-only and bridge-independent.",
++    inputSchema: packagePreviewShape,
++    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
++  }, async (rawInput) => {
++    try {
++      const parsed = packagePreviewSchema.parse(rawInput);
++      const guarded = guardLocatorPath(parsed);
++      const result = previewPackageUpdate({ ...parsed, ...guarded });
++
++      const trackName = result.packageSummary.metadata?.trackName ?? parsed.trackName ?? result.packageSummary.trackSlug;
++      const summary =
++        result.changedProfileFields.length > 0
++          ? `Previewed package update for "${trackName}" and found ${result.changedProfileFields.length} changed profile field(s).`
++          : `Previewed package update for "${trackName}" and found no profile changes.`;
++
++      logAction({
++        tool: PACKAGE_PREVIEW_TOOL,
++        action: "read",
++        target: result.packageRoot,
++        summary,
++        dryRun: true,
++        ok: true,
++      });
++
++      return {
++        content: [{
++          type: "text",
++          text: formatToolResult(true, summary, {
++            packageRoot: result.packageRoot,
++            targetPackagePath: result.targetPackagePath,
++            currentCompleteness: result.packageSummary.complete,
++            existingDocuments: result.packageSummary.existingDocuments,
++            missingDocuments: result.packageSummary.missingDocuments,
++            changedProfileFields: result.changedProfileFields,
++            recommendedSections: result.recommendedSections,
++            sectionRecommendations: result.sectionRecommendations,
++            metadataWouldChange: result.metadataWouldChange,
++            metadataPath: result.packageSummary.metadataPath,
++          }),
++        }],
++      };
++    } catch (e) {
++      const err = String(e);
++      logAction({
++        tool: PACKAGE_PREVIEW_TOOL,
++        action: "read",
++        summary: err,
++        dryRun: true,
++        ok: false,
++        error: err,
++      });
++      return { content: [{ type: "text", text: `✗ ${err}` }], isError: true };
++    }
++  });
++
+   server.registerTool("fornix_regenerate_package_section", {
+     title: "Regenerate Package Section",
+     description:
+@@ -376,6 +487,7 @@
+         ...guarded,
+       } satisfies RegeneratePackageSectionInput);
+ 
++      const changedFieldsSummary = result.changedProfileFields.map((change) => change.field);
+       const summary = `Regenerated ${parsed.section} for "${result.metadata.trackName}" without touching the other package documents.`;
+       logAction({
+         tool: "fornix_regenerate_package_section",
+@@ -393,10 +505,21 @@
+             packageRoot: result.packageRoot,
+             updatedSection: result.updatedSection,
+             updatedFile: result.updatedFile,
++            changedProfileFields: result.changedProfileFields,
++            sectionRecommendationReasons: result.sectionRecommendationReasons,
++            metadataUpdatedFields: result.metadataUpdatedFields,
+             untouchedFiles: result.untouchedFiles,
+             metadataPath: result.metadataPath,
+             lastUpdatedTimestamp: result.metadata.lastUpdatedTimestamp,
+             updatedSections: result.metadata.updatedSections,
++            untouchedSections: Object.entries(result.packageSummary.documents)
++              .filter(([sectionId]) => sectionId !== result.updatedSection)
++              .filter(([, state]) => state.exists)
++              .map(([sectionId]) => sectionId),
++            unchangedBecause: result.sectionRecommendationReasons.length > 0
++              ? "targeted section matched the changed profile inputs"
++              : "targeted section was explicitly requested even though the changed inputs mapped more strongly elsewhere or did not change",
++            changedProfileFieldNames: changedFieldsSummary,
+           }),
+         }],
+       };
+diff -ruN /mnt/data/fornix_audit_baseline/tests/production/production-package.test.js /mnt/data/fornix_audit_current/tests/production/production-package.test.js
+--- /mnt/data/fornix_audit_baseline/tests/production/production-package.test.js	2026-04-03 22:03:03.907552639 +0000
++++ /mnt/data/fornix_audit_current/tests/production/production-package.test.js	2026-04-03 22:00:53.982948241 +0000
+@@ -11,6 +11,7 @@
+   PACKAGE_METADATA_LAYOUT,
+   buildMixActions,
+   getPackageSummary,
++  previewPackageUpdate,
+   regenerateProductionPackageSection,
+   writeProductionPackage,
+ } from "../../dist/services/production-package.js";
+@@ -153,6 +154,40 @@
+ });
+ 
+ 
++test("package update preview is read-only and recommends affected sections from changed inputs", () => {
++  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "fornix-preview-"));
++  const input = createBaseInput(tempRoot);
++  const result = writeProductionPackage(input);
++
++  const routingPath = path.join(result.packageRoot, PACKAGE_LAYOUT.routing.dir, PACKAGE_LAYOUT.routing.filename);
++  const metadataBefore = fs.readFileSync(result.metadataPath, "utf8");
++  const routingBefore = fs.readFileSync(routingPath, "utf8");
++  const routingMtimeBefore = fs.statSync(routingPath).mtimeMs;
++  const metadataMtimeBefore = fs.statSync(result.metadataPath).mtimeMs;
++
++  const preview = previewPackageUpdate({
++    packagePath: result.packageRoot,
++    vocalMode: "instrumental",
++    kickStyle: "cleaner punch tok with shorter tail",
++    cinematicIntensity: "low",
++  });
++
++  assert.equal(preview.targetPackagePath, result.packageRoot);
++  assert.equal(preview.packageSummary.complete, true);
++  assert.equal(preview.metadataWouldChange, true);
++  assert.ok(preview.changedProfileFields.some((change) => change.field === "vocalMode"));
++  assert.ok(preview.changedProfileFields.some((change) => change.field === "kickStyle"));
++  assert.ok(preview.changedProfileFields.some((change) => change.field === "cinematicIntensity"));
++  assert.ok(preview.recommendedSections.includes("routing"));
++  assert.ok(preview.recommendedSections.includes("mix"));
++  assert.ok(preview.recommendedSections.includes("sound_design"));
++  assert.ok(preview.sectionRecommendations.some((item) => item.section === "routing" && item.reasons.some((reason) => /vocalMode/i.test(reason))));
++  assert.equal(fs.readFileSync(result.metadataPath, "utf8"), metadataBefore);
++  assert.equal(fs.readFileSync(routingPath, "utf8"), routingBefore);
++  assert.equal(fs.statSync(routingPath).mtimeMs, routingMtimeBefore);
++  assert.equal(fs.statSync(result.metadataPath).mtimeMs, metadataMtimeBefore);
++});
++
+ test("selective regeneration updates only the targeted section and refreshes metadata", () => {
+   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "fornix-regen-"));
+   const input = createBaseInput(tempRoot);
+@@ -184,6 +219,12 @@
+   assert.notEqual(updatedRouting, originalRouting);
+   assert.equal(updatedProjectPlan, originalProjectPlan);
+   assert.equal(updatedSoundDesign, originalSoundDesign);
++  assert.ok(regenResult.changedProfileFields.some((change) => change.field === "vocalMode"));
++  assert.ok(regenResult.changedProfileFields.some((change) => change.field === "djUtilityPriority"));
++  assert.ok(regenResult.metadataUpdatedFields.includes("vocalMode"));
++  assert.ok(regenResult.metadataUpdatedFields.includes("lastUpdatedTimestamp"));
++  assert.ok(regenResult.sectionRecommendationReasons.some((reason) => /vocal mode/i.test(reason)));
++  assert.ok(regenResult.untouchedFiles.includes(projectPlanPath));
+ 
+   assert.equal(updatedMetadata.generatorTool, "fornix_regenerate_package_section");
+   assert.equal(updatedMetadata.generationTimestamp, originalMetadata.generationTimestamp);
+@@ -210,6 +251,7 @@
+   assert.deepEqual(names, [
+     "fornix_generate_production_package",
+     "fornix_generate_mix_actions",
++    "fornix_preview_package_update",
+     "fornix_regenerate_package_section",
+     "fornix_get_package_summary",
+   ]);
