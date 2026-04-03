@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.fornix-mcp.log
+*.local.json
+.DS_Store
+Thumbs.db

@@ -1,0 +1,10 @@
+{
+  "allowedDirs": [
+    "C:\\Users\\YourName\\Music\\Fornix",
+    "C:\\Users\\YourName\\Documents\\fornix-studio-mcp"
+  ],
+  "readOnlyDirs": [],
+  "dryRunByDefault": false,
+  "gitRoot": "C:\\Users\\YourName\\Music\\Fornix",
+  "s1BridgeEnabled": true
+}

@@ -1,0 +1,15 @@
+{
+  "_comment": "Add 'fornix-studio' block into the mcpServers section of your Claude Desktop config.",
+  "_configPath_windows": "%APPDATA%\\Claude\\claude_desktop_config.json",
+  "_configPath_mac": "~/Library/Application Support/Claude/claude_desktop_config.json",
+
+  "mcpServers": {
+    "fornix-studio": {
+      "command": "node",
+      "args": ["C:/Users/Fornix/fornix-studio-mcp/dist/index.js"],
+      "env": {
+        "WORKSPACE_ROOT": "C:/Users/Fornix/Projects/hardstyle-project"
+      }
+    }
+  }
+}

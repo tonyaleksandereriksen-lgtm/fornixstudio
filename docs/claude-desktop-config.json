@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "fornix-studio": {
+      "command": "node",
+      "args": ["C:/Users/Fornix/fornix-studio-mcp/dist/index.js"],
+      "env": {
+        "WORKSPACE_ROOT": "C:/Users/Fornix/Projects/FornixHardstyle"
+      }
+    }
+  }
+}

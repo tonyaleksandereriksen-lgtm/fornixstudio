@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fornix MCP Dashboard</title>
+  <style>
+    :root {
+      --bg:        #0d0d0f;
+      --surface:   #16161a;
+      --border:    #2a2a30;
+      --accent:    #ff5500;
+      --accent2:   #0077ff;
+      --green:     #00cc66;
+      --red:       #ff3344;
+      --yellow:    #ffaa00;
+      --text:      #e8e8ec;
+      --muted:     #666677;
+      --mono:      "JetBrains Mono", "Fira Mono", monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, "Segoe UI", sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .logo {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: var(--accent);
+    }
+
+    .logo span { color: var(--text); }
+
+    .badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-weight: 600;
+      border: 1px solid;
+    }
+
+    .badge-green  { color: var(--green);  border-color: var(--green);  background: rgba(0,204,102,.08); }
+    .badge-red    { color: var(--red);    border-color: var(--red);    background: rgba(255,51,68,.08); }
+    .badge-yellow { color: var(--yellow); border-color: var(--yellow); background: rgba(255,170,0,.08); }
+
+    .header-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+
+    /* ── Layout ── */
+    .layout {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      height: calc(100vh - 53px);
+    }
+
+    /* ── Sidebar ── */
+    aside {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 16px 0;
+      overflow-y: auto;
+    }
+
+    .nav-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 0 16px 8px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 16px;
+      cursor: pointer;
+      border-radius: 0;
+      transition: background .1s;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .nav-item:hover { background: rgba(255,255,255,.04); color: var(--text); }
+    .nav-item.active { color: var(--text); background: rgba(255,85,0,.12); border-left: 2px solid var(--accent); }
+    .nav-item .icon { font-size: 16px; width: 20px; text-align: center; }
+
+    /* ── Main ── */
+    main {
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* ── Panel ── */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .panel-body { padding: 16px; }
+
+    /* ── Status grid ── */
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+
+    .stat-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px 16px;
+    }
+
+    .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+    .stat-value { font-size: 24px; font-weight: 700; font-family: var(--mono); }
+    .stat-sub   { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+    /* ── Log ── */
+    .log-feed {
+      background: var(--bg);
+      border-radius: 6px;
+      padding: 12px;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.7;
+      max-height: 340px;
+      overflow-y: auto;
+    }
+
+    .log-row { display: flex; gap: 12px; }
+    .log-time { color: var(--muted); flex-shrink: 0; }
+    .log-ok   { color: var(--green); flex-shrink: 0; }
+    .log-err  { color: var(--red);   flex-shrink: 0; }
+    .log-dry  { color: var(--yellow); flex-shrink: 0; }
+    .log-tool { color: var(--accent2); flex-shrink: 0; min-width: 200px; }
+    .log-msg  { color: var(--text); }
+
+    /* ── Transport bar ── */
+    .transport {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      background: var(--bg);
+      border-radius: 6px;
+      padding: 16px 20px;
+    }
+
+    .bpm-display {
+      font-family: var(--mono);
+      font-size: 40px;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1;
+    }
+
+    .bpm-label { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+    .transport-divider {
+      width: 1px;
+      height: 48px;
+      background: var(--border);
+    }
+
+    .transport-field { text-align: center; }
+    .transport-val  { font-family: var(--mono); font-size: 20px; font-weight: 600; }
+    .transport-lbl  { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+    /* ── Tracks list ── */
+    .tracks-list { display: flex; flex-direction: column; gap: 1px; }
+
+    .track-row {
+      display: grid;
+      grid-template-columns: 30px 1fr 80px 60px 60px;
+      align-items: center;
+      gap: 12px;
+      padding: 9px 12px;
+      background: var(--bg);
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    .track-row:nth-child(even) { background: rgba(255,255,255,.02); }
+
+    .track-color { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .track-name  { font-weight: 500; }
+    .track-type  { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+    .track-m, .track-s {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 3px;
+      cursor: pointer;
+      text-align: center;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--muted);
+      transition: all .1s;
+    }
+    .track-m.active { background: var(--yellow); color: #000; border-color: var(--yellow); }
+    .track-s.active { background: var(--green);  color: #000; border-color: var(--green); }
+
+    /* ── Prompt box ── */
+    .prompt-area {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .prompt-input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 13px;
+      padding: 10px 14px;
+      resize: vertical;
+      min-height: 80px;
+      outline: none;
+      transition: border-color .15s;
+    }
+
+    .prompt-input:focus { border-color: var(--accent); }
+
+    .btn {
+      padding: 8px 20px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity .15s, transform .1s;
+    }
+
+    .btn:hover  { opacity: .85; }
+    .btn:active { transform: scale(.98); }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-ghost   { background: transparent; color: var(--text); border: 1px solid var(--border); }
+
+    .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    /* ── Quick prompts ── */
+    .quick-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+
+    .chip {
+      font-size: 12px;
+      padding: 5px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      color: var(--muted);
+      background: var(--bg);
+      transition: all .1s;
+    }
+
+    .chip:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Section title ── */
+    .section-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    /* ── Hidden panels ── */
+    .view { display: none; flex-direction: column; gap: 20px; }
+    .view.active { display: flex; }
+
+    /* ── Connection pill ── */
+    .conn-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 4px;
+    }
+
+    .conn-dot.ok  { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 2s infinite; }
+    .conn-dot.off { background: var(--muted); }
+    .conn-dot.err { background: var(--red); }
+
+    @keyframes pulse {
+      0%,100% { opacity: 1; }
+      50%      { opacity: .4; }
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 700px) {
+      .layout { grid-template-columns: 1fr; }
+      aside { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────────────────────── -->
+<header>
+  <div class="logo">FORNIX <span>MCP</span></div>
+  <div id="mcp-badge" class="badge badge-yellow">⏳ Connecting…</div>
+  <div id="s1-badge"  class="badge badge-red">S1 Offline</div>
+  <div class="header-right">
+    <button class="btn btn-ghost" onclick="refreshAll()">↻ Refresh</button>
+  </div>
+</header>
+
+<!-- ── Layout ──────────────────────────────────────────────────────────────── -->
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside>
+    <div class="nav-label">Workspace</div>
+    <div class="nav-item active" data-view="overview" onclick="switchView(this)">
+      <span class="icon">🏠</span> Overview
+    </div>
+    <div class="nav-item" data-view="studio" onclick="switchView(this)">
+      <span class="icon">🎛</span> Studio One
+    </div>
+    <div class="nav-item" data-view="midi" onclick="switchView(this)">
+      <span class="icon">🎹</span> MIDI & Arrangement
+    </div>
+    <div class="nav-item" data-view="sound" onclick="switchView(this)">
+      <span class="icon">🔊</span> Sound Design
+    </div>
+
+    <div class="nav-label" style="margin-top:20px;">Developer</div>
+    <div class="nav-item" data-view="files" onclick="switchView(this)">
+      <span class="icon">📁</span> File Tools
+    </div>
+    <div class="nav-item" data-view="git" onclick="switchView(this)">
+      <span class="icon">🔀</span> Git / Checkpoints
+    </div>
+    <div class="nav-item" data-view="log" onclick="switchView(this)">
+      <span class="icon">📋</span> Action Log
+    </div>
+
+    <div class="nav-label" style="margin-top:20px;">Quick Prompts</div>
+    <div class="nav-item" data-view="prompts" onclick="switchView(this)">
+      <span class="icon">💬</span> Prompt Library
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main id="main-content">
+
+    <!-- ── Overview ───────────────────────────────────────────────────────── -->
+    <div id="view-overview" class="view active">
+
+      <div class="section-title">System Overview</div>
+
+      <div class="panel">
+        <div class="panel-header">📊 Status</div>
+        <div class="panel-body">
+          <div class="status-grid">
+            <div class="stat-card">
+              <div class="stat-label">MCP Tools</div>
+              <div class="stat-value" style="color:var(--accent)">49</div>
+              <div class="stat-sub">Across 10 families</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">S1 Bridge</div>
+              <div class="stat-value" id="s1-status-val" style="color:var(--muted)">—</div>
+              <div class="stat-sub">ws://127.0.0.1:7890</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Actions Today</div>
+              <div class="stat-value" id="actions-today" style="color:var(--accent2)">—</div>
+              <div class="stat-sub">From audit log</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Last Checkpoint</div>
+              <div class="stat-value" id="last-checkpoint" style="font-size:14px;color:var(--green)">—</div>
+              <div class="stat-sub">Git safety net</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">⚡ Quick Actions</div>
+        <div class="panel-body">
+          <div class="btn-row">
+            <button class="btn btn-primary" onclick="copyPrompt('Create a checkpoint before we start – label it \\'session-start\\'')">
+              📌 Create Checkpoint
+            </button>
+            <button class="btn btn-ghost" onclick="copyPrompt('Show me my Studio One session: tempo, tracks, and loop range.')">
+              🎛 Inspect Session
+            </button>
+            <button class="btn btn-ghost" onclick="copyPrompt('Generate the standard Fornix bus routing template.')">
+              🚌 Apply Bus Template
+            </button>
+            <button class="btn btn-ghost" onclick="copyPrompt('Show me the last 20 action log entries.')">
+              📋 View Log
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">📋 Recent Actions</div>
+        <div class="panel-body">
+          <div id="log-preview" class="log-feed">
+            <div style="color:var(--muted)">Loading action log…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Studio One ──────────────────────────────────────────────────────── -->
+    <div id="view-studio" class="view">
+
+      <div class="section-title">Studio One</div>
+
+      <div class="panel">
+        <div class="panel-header">🚦 Transport</div>
+        <div class="panel-body">
+          <div class="transport">
+            <div>
+              <div class="bpm-display" id="bpm-val">—</div>
+              <div class="bpm-label">BPM</div>
+            </div>
+            <div class="transport-divider"></div>
+            <div class="transport-field">
+              <div class="transport-val" id="ts-val">—</div>
+              <div class="transport-lbl">Time Sig</div>
+            </div>
+            <div class="transport-divider"></div>
+            <div class="transport-field">
+              <div class="transport-val" id="loop-val">—</div>
+              <div class="transport-lbl">Loop Range</div>
+            </div>
+            <div class="transport-divider"></div>
+            <div class="transport-field">
+              <div class="transport-val" id="sr-val">—</div>
+              <div class="transport-lbl">Sample Rate</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">🎚 Tracks <span id="track-count" style="color:var(--muted);font-weight:400;font-size:12px;margin-left:8px"></span></div>
+        <div class="panel-body">
+          <div id="tracks-list" class="tracks-list">
+            <div style="color:var(--muted);font-size:12px">
+              Connect Studio One bridge to see tracks.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">🎯 S1 Quick Actions</div>
+        <div class="panel-body">
+          <div class="quick-chips">
+            <span class="chip" onclick="copyPrompt('Set the tempo to 150 BPM.')">Set BPM 150</span>
+            <span class="chip" onclick="copyPrompt('Set the loop range to bars 1–32.')">Loop 1–32</span>
+            <span class="chip" onclick="copyPrompt('Create a new audio track called \\'Kick\\' and route it to the Kick & Bass bus.')">Add Kick Track</span>
+            <span class="chip" onclick="copyPrompt('Create a new instrument track called \\'Supersaws\\' and route it to the LEAD bus.')">Add Supersaw Track</span>
+            <span class="chip" onclick="copyPrompt('Add FabFilter Pro-R 2 to the LEAD bus.')">Add Pro-R to LEAD</span>
+            <span class="chip" onclick="copyPrompt('Add SSL Bus Compressor 2 to the Kick & Bass bus.')">SSL to K&B</span>
+            <span class="chip" onclick="copyPrompt('Mute all tracks except the Kick & Bass bus.')">Solo K&B</span>
+            <span class="chip" onclick="copyPrompt('Show me all plugin parameters on the Pro-L 2 on the Master bus.')">Read Master L2</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── MIDI & Arrangement ──────────────────────────────────────────────── -->
+    <div id="view-midi" class="view">
+
+      <div class="section-title">MIDI & Arrangement</div>
+
+      <div class="panel">
+        <div class="panel-header">🗺 Arrangement Sections</div>
+        <div class="panel-body">
+          <div class="quick-chips">
+            <span class="chip" onclick="copyPrompt('Generate a standard hardstyle arrangement with all sections (Intro, Breakdown, Build-up, Drop 1, Breakdown 2, Build-up 2, Drop 2, Outro) starting at bar 1 at 150 BPM.')">Full Hardstyle Template</span>
+            <span class="chip" onclick="copyPrompt('Add arrangement markers: Intro (bars 1–16), Breakdown (17–32), Build-up (33–40), Drop 1 (41–72).')">Add Markers</span>
+            <span class="chip" onclick="copyPrompt('Set the loop range to cover bars 41 to 72 (Drop 1).')">Loop Drop 1</span>
+            <span class="chip" onclick="copyPrompt('Export the full arrangement structure as a JSON file to my project folder.')">Export Arrangement</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">🎹 MIDI Generation</div>
+        <div class="panel-body">
+          <div class="quick-chips">
+            <span class="chip" onclick="copyPrompt('Create a 4-bar minor chord progression in the key of A minor on the Chords track, starting at bar 1. Use Am – F – C – G voiced for hardstyle synths.')">Chord Progression</span>
+            <span class="chip" onclick="copyPrompt('Generate a hardstyle 4-on-the-floor kick pattern for 4 bars on the Kick track starting at bar 1 at 150 BPM.')">Kick Pattern</span>
+            <span class="chip" onclick="copyPrompt('Generate a 4-bar hi-hat pattern with 8th notes and open hats on beats 2 and 4, on the Percussion track.')">Hi-Hat Pattern</span>
+            <span class="chip" onclick="copyPrompt('Export a MIDI file with a 4-bar supersaw riff in A minor at 150 BPM to my project folder.')">Export MIDI Riff</span>
+            <span class="chip" onclick="copyPrompt('Quantize the MIDI notes on the Supersaws track, bars 1–8, to 1/16 at 100% strength.')">Quantize 1/16</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Sound Design ────────────────────────────────────────────────────── -->
+    <div id="view-sound" class="view">
+
+      <div class="section-title">Sound Design</div>
+
+      <div class="panel">
+        <div class="panel-header">🔊 Quick Recipes</div>
+        <div class="panel-body">
+          <div class="quick-chips">
+            <span class="chip" onclick="copyPrompt('Generate a hardstyle supersaw patch recipe for Serum: 7-voice detuned saws, wide stereo, high-pass at 200 Hz, slight chorus.')">Hardstyle Supersaws (Serum)</span>
+            <span class="chip" onclick="copyPrompt('Generate a hard kick design recipe: body at 50 Hz, distorted transient, click layer, sidechain ready.')">Hard Kick Design</span>
+            <span class="chip" onclick="copyPrompt('Generate a plucked uplifting trance lead recipe for Sylenth1 with fast attack square lead, slight vibrato.')">Trance Lead (Sylenth1)</span>
+            <span class="chip" onclick="copyPrompt('Generate a hardstyle reverse buildup FX recipe using white noise, filtered sweep, pitch rise, reverb tail.')">Buildup FX</span>
+            <span class="chip" onclick="copyPrompt('Generate a sub bass patch recipe at 55 Hz with slight saturation, short attack, smooth release.')">Sub Bass</span>
+            <span class="chip" onclick="copyPrompt('Generate a cinematic pad recipe: slow attack strings, hall reverb, low-frequency oscillation, dark tone.')">Cinematic Pad</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">⚙️ FX Chain Templates</div>
+        <div class="panel-body">
+          <div class="quick-chips">
+            <span class="chip" onclick="copyPrompt('Set up a standard Fornix LEAD bus chain: FabFilter Pro-R 2 (medium room), FabFilter Pro-Q 3 (air shelf at 12 kHz), Oxford Inflator at 30%.')">LEAD Bus Chain</span>
+            <span class="chip" onclick="copyPrompt('Set up the Kick & Bass bus: SSL Bus Compressor 2 (4:1, fast attack), Oxford Inflator 20%, Pro-L 2 at -0.3 dBTP ceiling.')">Kick & Bass Chain</span>
+            <span class="chip" onclick="copyPrompt('Set up the Master bus: Ozone 12 Dynamics, FabFilter Pro-L 2 at -1 dBTP, -14 LUFS target.')">Master Chain</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── File Tools ──────────────────────────────────────────────────────── -->
+    <div id="view-files" class="view">
+
+      <div class="section-title">File Tools</div>
+
+      <div class="panel">
+        <div class="panel-header">📁 Quick Actions</div>
+        <div class="panel-body">
+          <div class="quick-chips">
+            <span class="chip" onclick="copyPrompt('List the file tree of my project workspace, 3 levels deep.')">List Project Tree</span>
+            <span class="chip" onclick="copyPrompt('Inspect the project structure and tell me about languages, frameworks, and entry points.')">Inspect Structure</span>
+            <span class="chip" onclick="copyPrompt('Search all files in my workspace for the pattern \\'FabFilter\\'.')">Search Files</span>
+            <span class="chip" onclick="copyPrompt('Run npm run build and show me the result.')">Run Build</span>
+            <span class="chip" onclick="copyPrompt('Run the TypeScript type checker and show all errors.')">Typecheck</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Git ────────────────────────────────────────────────────────────── -->
+    <div id="view-git" class="view">
+
+      <div class="section-title">Git / Checkpoints</div>
+
+      <div class="panel">
+        <div class="panel-header">🔀 Safety Net</div>
+        <div class="panel-body">
+          <div class="quick-chips">
+            <span class="chip" onclick="copyPrompt('Show git status for my workspace.')">Git Status</span>
+            <span class="chip" onclick="copyPrompt('Create a checkpoint labelled \\'before-plugin-changes\\'.')">Checkpoint Now</span>
+            <span class="chip" onclick="copyPrompt('List my last 10 MCP checkpoints.')">List Checkpoints</span>
+            <span class="chip" onclick="copyPrompt('Show me the git diff for all current changes.')">View Diff</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Log ────────────────────────────────────────────────────────────── -->
+    <div id="view-log" class="view">
+
+      <div class="section-title">Action Log</div>
+
+      <div class="panel">
+        <div class="panel-header">📋 Full Audit Trail</div>
+        <div class="panel-body">
+          <div id="log-full" class="log-feed" style="max-height:600px">
+            <div style="color:var(--muted)">Loading…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Prompt Library ──────────────────────────────────────────────────── -->
+    <div id="view-prompts" class="view">
+
+      <div class="section-title">Prompt Library</div>
+
+      <div class="panel">
+        <div class="panel-header">💬 Compose & Copy</div>
+        <div class="panel-body prompt-area">
+          <p style="color:var(--muted);font-size:12px;margin-bottom:8px;">
+            Click any chip below to load a prompt, or write your own. Click <strong>Copy</strong> to paste into Claude.
+          </p>
+          <div class="quick-chips" id="library-chips"></div>
+          <textarea id="prompt-box" class="prompt-input" placeholder="Type or select a prompt…"></textarea>
+          <div class="btn-row">
+            <button class="btn btn-primary" onclick="copyCurrentPrompt()">📋 Copy to Clipboard</button>
+            <button class="btn btn-ghost" onclick="clearPrompt()">Clear</button>
+          </div>
+          <div id="copy-confirm" style="display:none;color:var(--green);font-size:12px;margin-top:4px;">
+            ✓ Copied! Paste into Claude.
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+
+const MOCK_LOG = [
+  { ts: new Date(Date.now()-1000*60*2).toISOString(), tool:"s1_set_tempo",     action:"s1_bridge", summary:"Tempo set to 150 BPM",           dryRun:false, ok:true  },
+  { ts: new Date(Date.now()-1000*60*5).toISOString(), tool:"git_commit_checkpoint", action:"git", summary:"Checkpoint: before-bus-rework",   dryRun:false, ok:true  },
+  { ts: new Date(Date.now()-1000*60*8).toISOString(), tool:"s1_create_track",  action:"s1_bridge", summary:'Created bus track: "LEAD"',      dryRun:false, ok:true  },
+  { ts: new Date(Date.now()-1000*60*12).toISOString(),tool:"fs_write_file",    action:"write",     summary:"Wrote track-plan.json",          dryRun:false, ok:true  },
+  { ts: new Date(Date.now()-1000*60*20).toISOString(),tool:"s1_add_plugin",    action:"s1_bridge", summary:'Added FabFilter Pro-R 2 to "LEAD"', dryRun:false, ok:true },
+  { ts: new Date(Date.now()-1000*60*30).toISOString(),tool:"project_run_build",action:"exec",      summary:"Build failed (exit 1)",           dryRun:false, ok:false },
+];
+
+const MOCK_TRANSPORT = { bpm: 150, ts: "4/4", loop: "1–32", sr: "48000" };
+
+const MOCK_TRACKS = [
+  { name:"Kick",      type:"audio",      color:"#CC2200", muted:false, soloed:false },
+  { name:"Kick & Bass", type:"bus",      color:"#CC0000", muted:false, soloed:false },
+  { name:"Supersaws", type:"instrument", color:"#0055CC", muted:false, soloed:false },
+  { name:"LEAD",      type:"bus",        color:"#FF6600", muted:false, soloed:false },
+  { name:"Strings",   type:"instrument", color:"#006622", muted:false, soloed:false },
+  { name:"Pads",      type:"bus",        color:"#005588", muted:false, soloed:false },
+  { name:"FX Riser",  type:"audio",      color:"#884400", muted:true,  soloed:false },
+  { name:"Master",    type:"bus",        color:"#222222", muted:false, soloed:false },
+];
+
+const PROMPT_LIBRARY = [
+  { cat:"Session",      text:"What's the current tempo, loop range, and track list in my session?" },
+  { cat:"Session",      text:"Create a checkpoint labelled 'pre-mix-session'." },
+  { cat:"Template",     text:"Load the Fornix hardstyle bus routing template." },
+  { cat:"Template",     text:"Generate a full hardstyle arrangement template at 150 BPM." },
+  { cat:"Tracks",       text:"Create an instrument track called 'Supersaws', colour #0055FF, route to LEAD bus." },
+  { cat:"Tracks",       text:"Mute all tracks except Kick & Bass bus." },
+  { cat:"Plugins",      text:"Add FabFilter Pro-R 2 to the LEAD bus with medium room settings." },
+  { cat:"Plugins",      text:"Set the Oxford Inflator on the Master bus to 25% effect." },
+  { cat:"Plugins",      text:"List all automatable parameters on the Pro-L 2 on the Master bus." },
+  { cat:"MIDI",         text:"Generate a 4-bar A minor chord progression on the Chords track starting at bar 1." },
+  { cat:"MIDI",         text:"Add a hardstyle 4-on-the-floor kick pattern for 8 bars on the Kick track at 150 BPM." },
+  { cat:"MIDI",         text:"Export a MIDI file with a 4-bar supersaw riff in A minor at 150 BPM." },
+  { cat:"Sound Design", text:"Generate a hardstyle supersaw patch recipe for Serum with 7-voice detuned saws." },
+  { cat:"Sound Design", text:"Generate a hard kick design recipe: body 50 Hz, distorted transient, click layer." },
+  { cat:"Safety",       text:"Show me the last 20 action log entries." },
+  { cat:"Safety",       text:"List my checkpoints and revert to the one before the plugin changes." },
+];
+
+// ── View switching ─────────────────────────────────────────────────────────────
+
+function switchView(el) {
+  document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  el.classList.add("active");
+  const id = "view-" + el.dataset.view;
+  document.getElementById(id)?.classList.add("active");
+}
+
+// ── Simulated data refresh ─────────────────────────────────────────────────────
+
+function refreshAll() {
+  renderBadges();
+  renderLog(MOCK_LOG, "log-preview", 6);
+  renderLog(MOCK_LOG, "log-full", 50);
+  renderTransport();
+  renderTracks();
+  renderStats();
+}
+
+function renderBadges() {
+  const mcpBadge = document.getElementById("mcp-badge");
+  mcpBadge.textContent = "MCP Ready";
+  mcpBadge.className = "badge badge-green";
+
+  const s1Badge = document.getElementById("s1-badge");
+  // Simulate checking — in real use, this would ping the bridge
+  s1Badge.textContent = "S1 Connecting…";
+  s1Badge.className = "badge badge-yellow";
+}
+
+function renderLog(entries, containerId, max) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const rows = entries.slice(0, max).map(e => {
+    const time = new Date(e.ts).toLocaleTimeString();
+    const icon = e.dryRun ? '<span class="log-dry">[DRY]</span>' : e.ok ? '<span class="log-ok">✓</span>' : '<span class="log-err">✗</span>';
+    return `<div class="log-row">
+      <span class="log-time">${time}</span>
+      ${icon}
+      <span class="log-tool">${e.tool}</span>
+      <span class="log-msg">${e.summary}</span>
+    </div>`;
+  }).join("");
+  el.innerHTML = rows || '<div style="color:var(--muted)">No log entries yet.</div>';
+}
+
+function renderTransport() {
+  document.getElementById("bpm-val").textContent  = MOCK_TRANSPORT.bpm;
+  document.getElementById("ts-val").textContent   = MOCK_TRANSPORT.ts;
+  document.getElementById("loop-val").textContent = MOCK_TRANSPORT.loop;
+  document.getElementById("sr-val").textContent   = MOCK_TRANSPORT.sr + " Hz";
+  document.getElementById("s1-status-val").textContent = "Connected";
+  document.getElementById("s1-status-val").style.color = "var(--green)";
+}
+
+function renderTracks() {
+  const el = document.getElementById("tracks-list");
+  const count = document.getElementById("track-count");
+  if (!el) return;
+  count.textContent = `(${MOCK_TRACKS.length} tracks)`;
+  el.innerHTML = MOCK_TRACKS.map((t, i) => `
+    <div class="track-row">
+      <div class="track-color" style="background:${t.color}"></div>
+      <div class="track-name">${t.name}</div>
+      <div class="track-type">${t.type}</div>
+      <div class="track-m ${t.muted?"active":""}"
+           onclick="copyPrompt('${t.muted?"Unmute":"Mute"} the ${t.name} track.')">
+        M
+      </div>
+      <div class="track-s ${t.soloed?"active":""}"
+           onclick="copyPrompt('${t.soloed?"Unsolo":"Solo"} the ${t.name} track.')">
+        S
+      </div>
+    </div>
+  `).join("");
+}
+
+function renderStats() {
+  const today = new Date().toDateString();
+  const todayCount = MOCK_LOG.filter(e => new Date(e.ts).toDateString() === today).length;
+  document.getElementById("actions-today").textContent = todayCount;
+  document.getElementById("last-checkpoint").textContent = "before-bus-rework";
+  document.getElementById("s1-status-val") && (document.getElementById("s1-status-val").textContent = "Connected");
+}
+
+// ── Prompt library ─────────────────────────────────────────────────────────────
+
+function renderPromptLibrary() {
+  const el = document.getElementById("library-chips");
+  if (!el) return;
+  el.innerHTML = PROMPT_LIBRARY.map(p =>
+    `<span class="chip" onclick="loadPrompt(\`${p.text.replace(/`/g,"\\`")}\`)">[${p.cat}] ${p.text.slice(0,48)}…</span>`
+  ).join("");
+}
+
+function loadPrompt(text) {
+  document.getElementById("prompt-box").value = text;
+  const confirm = document.getElementById("copy-confirm");
+  if (confirm) confirm.style.display = "none";
+}
+
+function clearPrompt() {
+  document.getElementById("prompt-box").value = "";
+}
+
+function copyPrompt(text) {
+  navigator.clipboard.writeText(text).catch(() => {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+  });
+  showCopyFlash();
+}
+
+function copyCurrentPrompt() {
+  const text = document.getElementById("prompt-box").value;
+  if (!text) return;
+  copyPrompt(text);
+}
+
+function showCopyFlash() {
+  const el = document.getElementById("copy-confirm");
+  if (el) { el.style.display = "block"; setTimeout(() => el.style.display = "none", 2000); }
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+
+renderPromptLibrary();
+refreshAll();
+</script>
+</body>
+</html>

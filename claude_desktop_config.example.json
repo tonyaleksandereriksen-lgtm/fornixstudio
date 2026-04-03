@@ -1,0 +1,13 @@
+{
+  "_comment": "Add this block inside the 'mcpServers' object in your Claude Desktop claude_desktop_config.json",
+  "_config_location_windows": "%AppData%\\Claude\\claude_desktop_config.json",
+  "_config_location_mac": "~/Library/Application Support/Claude/claude_desktop_config.json",
+
+  "fornix-studio": {
+    "command": "node",
+    "args": ["C:\\Users\\YourName\\Music\\FornixMCP\\fornix-studio-mcp\\dist\\index.js"],
+    "env": {
+      "WORKSPACE_ROOT": "C:\\Users\\YourName\\Music\\FornixProjects"
+    }
+  }
+}
