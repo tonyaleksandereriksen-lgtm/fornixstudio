@@ -55,7 +55,7 @@ src/index.ts   (McpServer, StdioServerTransport)
 
 ## Bridge lifecycle model
 
-The Studio One bridge (`src/services/bridge.ts`) is experimental. States progress in order:
+The Studio One bridge (`src/services/bridge.ts`) is **dormant on Studio One 7**. API probing (2026-04-04) confirmed that `Host.WebSocket` and `Host.FileSystem` do not exist in Studio One 7.2.2 — the bridge cannot connect and no file markers can be written from inside the extension. See `docs/studio-one-7-api-findings.md` for the full API surface. The bridge code remains in place for potential future Studio One versions that add WebSocket support. States progress in order:
 
 ```
 disconnected → connecting → socket_connected → extension_responded
@@ -78,10 +78,10 @@ Use `s1_probe_runtime` (MCP tool) or `GET /api/status` to inspect the current st
 
 `studio-one-extension/` contains the JS extension that runs inside Studio One. It is **not** a Node module — it is loaded by Studio One's internal scripting engine.
 
-- **Stage 1 smoke** (`scripts/main.js`): IComponent format, no WebSocket, just writes a startup/shutdown marker to `Documents/FornixMCP/logs/startup-*.json`. Used to confirm Studio One actually executes the extension.
-- **Full bridge** (original `main.js`): WebSocket server on port 7890, command routing. Only usable if Stage 1 confirms execution and `Host.WebSocket.createServer` is available.
+- **`scripts/main.js`**: IComponent/FrameworkService format. Logs startup confirmation to `Host.Console.writeLine`. Reports `Host.WebSocket` and `Host.FileSystem` availability (both absent on S1v7).
+- **Full bridge** (original `main.js`): WebSocket server on port 7890, command routing. Verified impossible on Studio One 7 — `Host.WebSocket` does not exist.
 
-Install path (Windows): `%USERPROFILE%\Documents\Studio One\Extensions\FornixMCPBridge\`
+Install path (Windows): `%APPDATA%\PreSonus\Studio One 7\Extensions\FornixMCPBridge\`
 
 ## Production package system
 
@@ -89,7 +89,7 @@ Install path (Windows): `%USERPROFILE%\Documents\Studio One\Extensions\FornixMCP
 
 ## Key constraints
 
-- `s1BridgeEnabled` defaults to `false`. Do not enable it in config unless Stage 1 smoke test has confirmed extension execution.
+- `s1BridgeEnabled` defaults to `false`. Verified impossible on Studio One 7 — do not enable.
 - All file tool ops go through `guardPath` — paths outside `allowedDirs` throw.
 - `CHARACTER_LIMIT = 12_000` and `FILE_READ_LINE_LIMIT = 500` (constants.ts) cap tool output.
 - Tool registration is wrapped in `instrumentToolRegistration` which increments `_toolCallCount` for the dashboard — don't bypass this wrapper when adding new tools.
