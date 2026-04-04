@@ -82,6 +82,7 @@ export function registerFallbackTools(server: McpServer): void {
   }, async ({ outputDir, songTitle, tempo, tracks }) => {
     try {
       const abs = guardPath(outputDir);
+      if (isReadOnly(abs)) throw new Error(`${abs} is in a read-only directory`);
       fs.mkdirSync(abs, { recursive: true });
 
       const ts = Date.now();
@@ -139,6 +140,7 @@ export function registerFallbackTools(server: McpServer): void {
   }, async ({ outputDir, includePlugins }) => {
     try {
       const abs = guardPath(outputDir);
+      if (isReadOnly(abs)) throw new Error(`${abs} is in a read-only directory`);
       fs.mkdirSync(abs, { recursive: true });
 
       const buses = [

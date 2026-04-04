@@ -61,7 +61,9 @@ const LIVE_WRITE_COMMANDS = new Set([
   "quantizePart",
   "addMarker",
   "deleteMarker",
+  "addMarkersMulti",
   "addAutomationPoints",
+  "clearAutomation",
 ]);
 
 const DEFAULT_EXTENSION_LOG_DIR = path.join(os.homedir(), "Documents", "FornixMCP", "logs");

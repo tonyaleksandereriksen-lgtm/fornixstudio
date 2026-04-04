@@ -9,7 +9,7 @@ import fs from "fs";
 import path from "path";
 import { sendCommand, isBridgeReady } from "../../services/bridge.js";
 import { logAction, formatToolResult } from "../../services/logger.js";
-import { guardPath } from "../../services/workspace.js";
+import { guardPath, isReadOnly } from "../../services/workspace.js";
 import { requireBridgeRead, requireBridgeWrite } from "./bridge-guard.js";
 
 // Standard hardstyle/trance arrangement sections
@@ -234,6 +234,7 @@ export function registerArrangementTools(server: McpServer): void {
   }, async ({ outputDir, title, tempo, preset, customSections, trackAssignments }) => {
     try {
       const abs = guardPath(outputDir);
+      if (isReadOnly(abs)) throw new Error(`${abs} is in a read-only directory`);
       fs.mkdirSync(abs, { recursive: true });
 
       let sections =
