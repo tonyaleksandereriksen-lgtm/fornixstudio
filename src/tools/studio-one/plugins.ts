@@ -2,14 +2,14 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { sendCommand, getBridgeStatus } from "../../services/bridge.js";
+import { sendCommand, isBridgeReady } from "../../services/bridge.js";
 import { logAction, formatToolResult } from "../../services/logger.js";
 
 function notConnected(action: string) {
   return {
     content: [{
       type: "text" as const,
-      text: `⚠ Studio One bridge not connected – cannot ${action}.\nUse s1_export_instruction as a fallback.`,
+      text: `⚠ Studio One bridge not ready – cannot ${action}.\nUse s1_export_instruction as a fallback.`,
     }],
   };
 }
@@ -29,7 +29,7 @@ export function registerPluginTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   }, async ({ trackName, pluginName, insertPosition, preset }) => {
-    if (getBridgeStatus() !== "connected") return notConnected(`add "${pluginName}" to "${trackName}"`);
+    if (!isBridgeReady()) return notConnected(`add "${pluginName}" to "${trackName}"`);
     try {
       const res = await sendCommand("addPlugin", { trackName, pluginName, insertPosition, preset });
       if (!res.ok) throw new Error(res.error);
@@ -55,7 +55,7 @@ export function registerPluginTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ trackName, pluginName, paramName, value, isAbsolute }) => {
-    if (getBridgeStatus() !== "connected") return notConnected(`set param "${paramName}" on "${pluginName}"`);
+    if (!isBridgeReady()) return notConnected(`set param "${paramName}" on "${pluginName}"`);
     try {
       const res = await sendCommand("setPluginParam", { trackName, pluginName, paramName, value, isAbsolute });
       if (!res.ok) throw new Error(res.error);
@@ -78,7 +78,7 @@ export function registerPluginTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: true, destructiveHint: false },
   }, async ({ trackName, pluginName }) => {
-    if (getBridgeStatus() !== "connected") return notConnected(`read params for "${pluginName}"`);
+    if (!isBridgeReady()) return notConnected(`read params for "${pluginName}"`);
     try {
       const res = await sendCommand("getPluginParams", { trackName, pluginName });
       if (!res.ok) throw new Error(res.error);
@@ -100,7 +100,7 @@ export function registerPluginTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   }, async ({ trackName, pluginName, presetName }) => {
-    if (getBridgeStatus() !== "connected") return notConnected(`load preset "${presetName}"`);
+    if (!isBridgeReady()) return notConnected(`load preset "${presetName}"`);
     try {
       const res = await sendCommand("loadPluginPreset", { trackName, pluginName, presetName });
       if (!res.ok) throw new Error(res.error);
@@ -122,7 +122,7 @@ export function registerPluginTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   }, async ({ macroName }) => {
-    if (getBridgeStatus() !== "connected") return notConnected(`trigger macro "${macroName}"`);
+    if (!isBridgeReady()) return notConnected(`trigger macro "${macroName}"`);
     try {
       const res = await sendCommand("triggerMacro", { macroName });
       if (!res.ok) throw new Error(res.error);

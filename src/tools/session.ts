@@ -7,7 +7,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { sendCommand, getBridgeStatus } from "../services/bridge.js";
+import { sendCommand, isBridgeReady } from "../services/bridge.js";
 import { logAction, formatToolResult, truncate } from "../services/logger.js";
 
 // ── Fornix Plugin Preset Library ──────────────────────────────────────────────
@@ -120,9 +120,9 @@ export function registerSessionTools(server: McpServer): void {
   server.registerTool("session_kickstart", {
     title: "Kickstart New Session",
     description:
-      "Set up a complete new hardstyle session: tempo, time signature, " +
-      "all Fornix buses, standard plugin inserts, arrangement markers, and initial tracks. " +
-      "Runs as a batch — one command, full session skeleton.",
+      "Set up a hardstyle session skeleton: tempo, Fornix buses, plugin inserts, " +
+      "arrangement markers, and initial tracks. " +
+      "Song title and time signature inputs are planning metadata only unless a verified DAW command exists.",
     inputSchema: {
       songTitle: z.string().default("Untitled Hardstyle"),
       tempo: z.number().min(100).max(180).default(150).describe("BPM"),
@@ -141,7 +141,7 @@ export function registerSessionTools(server: McpServer): void {
     songTitle, tempo, timeSignatureNumerator,
     createBuses, insertPlugins, createArrangementMarkers, initialTracks,
   }) => {
-    if (getBridgeStatus() !== "connected") return notConnected("kickstart session");
+    if (!isBridgeReady()) return notConnected("kickstart session");
 
     const results: string[] = [];
     let errors = 0;
@@ -159,6 +159,11 @@ export function registerSessionTools(server: McpServer): void {
 
     // 1. Set tempo
     await step(`Tempo → ${tempo} BPM`, "setTempo", { bpm: tempo });
+
+    if (timeSignatureNumerator !== 4) {
+      results.push(`  ⚠ Time signature request ${timeSignatureNumerator}/4 noted, but no verified bridge command exists to apply it.`);
+    }
+    results.push(`  ℹ Song title "${songTitle}" is currently metadata for planning/logging only.`);
 
     // 2. Create buses
     if (createBuses) {
@@ -283,7 +288,7 @@ export function registerSessionTools(server: McpServer): void {
       };
     }
 
-    if (getBridgeStatus() !== "connected") return notConnected(`apply preset to "${pluginName}"`);
+    if (!isBridgeReady()) return notConnected(`apply preset to "${pluginName}"`);
 
     const results: string[] = [];
     let errors = 0;
@@ -312,16 +317,15 @@ export function registerSessionTools(server: McpServer): void {
   server.registerTool("session_health_check", {
     title: "Session Health Check",
     description:
-      "Analyse the current Studio One session for common issues: " +
-      "missing buses, unrouted tracks, clipping tracks, missing limiters, " +
-      "tempo inconsistencies, and empty arrangement sections.",
+      "Analyse the current Studio One session for the checks implemented in this repo: " +
+      "tempo mismatch, missing recommended buses, muted tracks, hot track volumes, and missing Master bus.",
     inputSchema: {
       expectedTempo: z.number().min(60).max(220).optional()
         .describe("Flag if session tempo differs from this value"),
     },
     annotations: { readOnlyHint: true, destructiveHint: false },
   }, async ({ expectedTempo }) => {
-    if (getBridgeStatus() !== "connected") {
+    if (!isBridgeReady()) {
       return {
         content: [{
           type: "text",

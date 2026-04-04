@@ -427,17 +427,23 @@ function render() {
   renderWorkspace();
 }
 
+function formatIso(value) {
+  return value ? new Date(value).toLocaleString() : '—';
+}
+
 function renderHeader() {
-  const bridge = status.bridge.status;
+  const bridge = status.bridge.connectionState || status.bridge.status;
   const pill = document.getElementById('bridge-pill');
-  if (bridge === 'connected') {
-    pill.innerHTML = '<div class="dot dot-green"></div> S1 Bridge Connected';
+
+  if (bridge === 'ready') {
+    pill.innerHTML = '<div class="dot dot-green"></div> S1 Ready';
     pill.className = 'pill pill-green';
   } else if (bridge === 'error') {
     pill.innerHTML = '<div class="dot dot-red"></div> Bridge Error';
     pill.className = 'pill pill-red';
   } else {
-    pill.innerHTML = '<div class="dot dot-yellow"></div> S1 Disconnected';
+    const label = bridge === 'connected' ? 'Socket Only' : bridge;
+    pill.innerHTML = `<div class="dot dot-yellow"></div> ${label}`;
     pill.className = 'pill pill-yellow';
   }
 
@@ -448,9 +454,11 @@ function renderHeader() {
 }
 
 function renderCards() {
-  const bridge = status.bridge.status;
-  const bridgeClass = bridge === 'connected' ? 'bridge-ok' : 'bridge-off';
-  const bridgeLabel = bridge === 'connected' ? 'Connected' : bridge;
+  const bridge = status.bridge.connectionState || status.bridge.status;
+  const handshakeOk = status.bridge.handshakeOk === true;
+  const bridgeClass = bridge === 'ready' ? 'bridge-ok' : 'bridge-off';
+  const bridgeLabel = bridge === 'ready' ? 'Ready' : bridge;
+  const capabilityCount = Object.values(status.bridge.capabilities || {}).filter(Boolean).length;
 
   document.getElementById('cards').innerHTML = `
     <div class="card accent">
@@ -461,12 +469,12 @@ function renderCards() {
     <div class="card ${bridgeClass}">
       <div class="card-title">Studio One Bridge</div>
       <div class="card-value">${bridgeLabel}</div>
-      <div class="card-sub">ws://127.0.0.1:7890</div>
+      <div class="card-sub">${handshakeOk ? 'handshake complete' : 'not verified yet'}</div>
     </div>
     <div class="card">
-      <div class="card-title">Log Entries</div>
-      <div class="card-value">${logData.length}</div>
-      <div class="card-sub">in .fornix-mcp.log</div>
+      <div class="card-title">Capabilities</div>
+      <div class="card-value">${capabilityCount}</div>
+      <div class="card-sub">reported by handshake</div>
     </div>
     <div class="card">
       <div class="card-title">Tools Available</div>
@@ -482,7 +490,8 @@ function renderSidebar() {
   toolData.forEach(t => counts[t.family] = (counts[t.family]||0)+1);
 
   document.getElementById('stat-calls').textContent = status.stats.toolCallsThisSession;
-  document.getElementById('stat-dirs').textContent = (status.workspace.allowedDirs||[]).join(', ').slice(0,40)||'—';
+  document.getElementById('stat-dirs').textContent =
+    `Bridge ${status.bridge.connectionState || status.bridge.status} • handshake ${status.bridge.handshakeOk ? 'ok' : 'pending'}`;
   document.getElementById('stat-branch').textContent = status.git?.branch ?? '—';
   document.getElementById('stat-git-clean').textContent = status.git
     ? (status.git.clean ? '✓ Working tree clean' : `${status.git.modified.length} modified`)
@@ -588,6 +597,8 @@ function renderTools() {
 function renderWorkspace() {
   const dirs = status.workspace.allowedDirs || [];
   const git = status.git;
+  const bridge = status.bridge || {};
+  const caps = bridge.capabilities || {};
 
   document.getElementById('pane-workspace').innerHTML = `
     <div class="ws-panel">
@@ -595,6 +606,18 @@ function renderWorkspace() {
       ${dirs.map(d => `<div class="dir-row">📁 ${d}</div>`).join('') || '<div class="empty">No directories configured</div>'}
 
       <div class="git-block">
+        <h3>⚡ Studio One Bridge</h3>
+        <div class="git-row"><span class="git-key">Enabled</span><span class="git-val">${bridge.enabled ? 'Yes' : 'No'}</span></div>
+        <div class="git-row"><span class="git-key">Experimental</span><span class="git-val">${bridge.experimental ? 'Yes' : 'No'}</span></div>
+        <div class="git-row"><span class="git-key">State</span><span class="git-val">${bridge.connectionState || bridge.status || '—'}</span></div>
+        <div class="git-row"><span class="git-key">Handshake</span><span class="git-val">${bridge.handshakeOk ? 'Complete' : 'Not verified'}</span></div>
+        <div class="git-row"><span class="git-key">Last handshake</span><span class="git-val">${formatIso(bridge.lastHandshakeAt)}</span></div>
+        <div class="git-row"><span class="git-key">Last ping</span><span class="git-val">${formatIso(bridge.lastPingAt)}</span></div>
+        <div class="git-row"><span class="git-key">Capabilities</span><span class="git-val">${Object.entries(caps).filter(([,v]) => v).map(([k]) => k).join(', ') || 'None reported'}</span></div>
+        ${bridge.lastError ? `<div class="git-row"><span class="git-key">Last error</span><span class="git-val ok-no">${bridge.lastError.code}: ${bridge.lastError.message}</span></div>` : ''}
+      </div>
+
+      <div class="git-block" style="margin-top:12px">
         <h3>⎇ Git Status</h3>
         ${git ? `
           <div class="git-row"><span class="git-key">Branch</span><span class="git-val">${git.branch}</span></div>

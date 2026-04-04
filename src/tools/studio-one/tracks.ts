@@ -2,14 +2,14 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { sendCommand, getBridgeStatus } from "../../services/bridge.js";
+import { sendCommand, isBridgeReady } from "../../services/bridge.js";
 import { logAction, formatToolResult } from "../../services/logger.js";
 
 function notConnected(action: string): { content: { type: "text"; text: string }[] } {
   return {
     content: [{
       type: "text",
-      text: `⚠ Studio One bridge not connected – cannot ${action}.\nUse s1_export_instruction for a file-based fallback.`,
+      text: `⚠ Studio One bridge not ready – cannot ${action}.\nUse s1_export_instruction for a file-based fallback.`,
     }],
   };
 }
@@ -23,7 +23,7 @@ export function registerTrackTools(server: McpServer): void {
     description: "Add a new track to the current Studio One song.",
     inputSchema: {
       name: z.string().min(1).max(64).describe("Track name"),
-      type: z.enum(["audio", "instrument", "automation", "bus", "folder"])
+      type: z.enum(["audio", "instrument", "automation", "bus", "fx", "folder"])
         .describe("Track type"),
       color: z.string().optional().describe("Hex colour e.g. #FF4400"),
       insertAtPosition: z.number().int().min(0).optional()
@@ -31,7 +31,7 @@ export function registerTrackTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   }, async ({ name, type, color, insertAtPosition }) => {
-    if (getBridgeStatus() !== "connected") return notConnected(`create track "${name}"`);
+    if (!isBridgeReady()) return notConnected(`create track "${name}"`);
     try {
       const res = await sendCommand("createTrack", { name, type, color, insertAtPosition });
       if (!res.ok) throw new Error(res.error);
@@ -58,7 +58,7 @@ export function registerTrackTools(server: McpServer): void {
     if (!trackId && !currentName) {
       return { content: [{ type: "text", text: "✗ Provide trackId or currentName" }], isError: true };
     }
-    if (getBridgeStatus() !== "connected") return notConnected(`rename track to "${newName}"`);
+    if (!isBridgeReady()) return notConnected(`rename track to "${newName}"`);
     try {
       const res = await sendCommand("renameTrack", { trackId, currentName, newName });
       if (!res.ok) throw new Error(res.error);
@@ -85,7 +85,7 @@ export function registerTrackTools(server: McpServer): void {
     if (!trackId && !trackName) {
       return { content: [{ type: "text", text: "✗ Provide trackId or trackName" }], isError: true };
     }
-    if (getBridgeStatus() !== "connected") return notConnected(`${muted ? "mute" : "unmute"} track`);
+    if (!isBridgeReady()) return notConnected(`${muted ? "mute" : "unmute"} track`);
     try {
       const res = await sendCommand("setTrackMute", { trackId, trackName, muted });
       if (!res.ok) throw new Error(res.error);
@@ -113,7 +113,7 @@ export function registerTrackTools(server: McpServer): void {
     if (!trackId && !trackName) {
       return { content: [{ type: "text", text: "✗ Provide trackId or trackName" }], isError: true };
     }
-    if (getBridgeStatus() !== "connected") return notConnected(`${soloed ? "solo" : "unsolo"} track`);
+    if (!isBridgeReady()) return notConnected(`${soloed ? "solo" : "unsolo"} track`);
     try {
       const res = await sendCommand("setTrackSolo", { trackId, trackName, soloed });
       if (!res.ok) throw new Error(res.error);
@@ -141,7 +141,7 @@ export function registerTrackTools(server: McpServer): void {
     if (!trackId && !trackName) {
       return { content: [{ type: "text", text: "✗ Provide trackId or trackName" }], isError: true };
     }
-    if (getBridgeStatus() !== "connected") return notConnected("set volume");
+    if (!isBridgeReady()) return notConnected("set volume");
     try {
       const res = await sendCommand("setTrackVolume", { trackId, trackName, volumeDb });
       if (!res.ok) throw new Error(res.error);
@@ -167,7 +167,7 @@ export function registerTrackTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   }, async ({ fromTrackName, toBusName, sendLevelDb, preFader }) => {
-    if (getBridgeStatus() !== "connected") return notConnected(`create send "${fromTrackName}" → "${toBusName}"`);
+    if (!isBridgeReady()) return notConnected(`create send "${fromTrackName}" → "${toBusName}"`);
     try {
       const res = await sendCommand("createSend", { fromTrackName, toBusName, sendLevelDb, preFader });
       if (!res.ok) throw new Error(res.error);

@@ -11,7 +11,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { sendCommand, getBridgeStatus } from "../../services/bridge.js";
+import { sendCommand, isBridgeReady } from "../../services/bridge.js";
 import { logAction, formatToolResult } from "../../services/logger.js";
 
 // Shared position schema
@@ -40,7 +40,7 @@ function notConnected(action: string) {
   return {
     content: [{
       type: "text" as const,
-      text: `⚠ Studio One bridge not connected – cannot ${action}.\n` +
+      text: `⚠ Studio One bridge not ready – cannot ${action}.\n` +
         `Use s1_export_instruction with MIDI commands as a fallback.`,
     }],
   };
@@ -85,7 +85,7 @@ export function registerMidiTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   }, async ({ trackName, notes, partName, createPartIfMissing }) => {
-    if (getBridgeStatus() !== "connected") return notConnected(`add MIDI notes to "${trackName}"`);
+    if (!isBridgeReady()) return notConnected(`add MIDI notes to "${trackName}"`);
     try {
       const res = await sendCommand("addMidiNotes", {
         trackName,
@@ -140,7 +140,7 @@ export function registerMidiTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   }, async ({ trackName, pitches, start, duration, velocity }) => {
-    if (getBridgeStatus() !== "connected") return notConnected(`add chord to "${trackName}"`);
+    if (!isBridgeReady()) return notConnected(`add chord to "${trackName}"`);
     try {
       // Resolve note names to MIDI numbers
       const resolvedPitches = pitches.map(p => {
@@ -202,7 +202,7 @@ export function registerMidiTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   }, async ({ trackName, startBar, lengthBars, steps, swing }) => {
-    if (getBridgeStatus() !== "connected") return notConnected(`add drum pattern to "${trackName}"`);
+    if (!isBridgeReady()) return notConnected(`add drum pattern to "${trackName}"`);
     try {
       const GM_MAP: Record<string, number> = {
         kick: 36, snare: 38, hihat: 42, openHihat: 46, clap: 39,
@@ -280,7 +280,7 @@ export function registerMidiTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: true },
   }, async ({ trackName, startBar, endBar }) => {
-    if (getBridgeStatus() !== "connected") return notConnected(`clear MIDI part on "${trackName}"`);
+    if (!isBridgeReady()) return notConnected(`clear MIDI part on "${trackName}"`);
     try {
       const res = await sendCommand("clearMidiPart", { trackName, startBar, endBar });
       if (!res.ok) throw new Error(res.error);
@@ -308,7 +308,7 @@ export function registerMidiTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   }, async ({ trackName, startBar, endBar, gridValue, strength }) => {
-    if (getBridgeStatus() !== "connected") return notConnected(`quantize "${trackName}"`);
+    if (!isBridgeReady()) return notConnected(`quantize "${trackName}"`);
     try {
       const res = await sendCommand("quantizePart", { trackName, startBar, endBar, gridValue, strength });
       if (!res.ok) throw new Error(res.error);

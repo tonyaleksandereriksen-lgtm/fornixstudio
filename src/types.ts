@@ -62,7 +62,39 @@ export interface CheckpointInfo {
 
 // ── Studio One Bridge ─────────────────────────────────────────────────────────
 
-export type S1BridgeStatus = "connected" | "disconnected" | "error";
+export type S1BridgeStatus =
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "ready"
+  | "degraded"
+  | "error";
+
+export interface S1BridgeCapabilities {
+  transport: boolean;
+  song: boolean;
+  tracks: boolean;
+  plugins: boolean;
+  automation: boolean;
+  midi: boolean;
+  markers: boolean;
+  filesystem: boolean;
+  websocketServer: boolean;
+}
+
+export interface S1BridgeErrorInfo {
+  code: string;
+  message: string;
+}
+
+export interface S1BridgeRuntimeStatus {
+  state: S1BridgeStatus;
+  handshakeOk: boolean;
+  lastHandshakeAt: string | null;
+  lastPingAt: string | null;
+  capabilities: S1BridgeCapabilities | null;
+  lastError: S1BridgeErrorInfo | null;
+}
 
 export interface S1Command {
   command: string;
@@ -71,10 +103,13 @@ export interface S1Command {
 }
 
 export interface S1Response {
-  requestId?: string;
+  requestId?: string | null;
   ok: boolean;
+  command: string;
   data?: unknown;
   error?: string;
+  errorCode?: string;
+  errorMessage?: string;
 }
 
 // ── Track types ───────────────────────────────────────────────────────────────

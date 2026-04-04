@@ -2,12 +2,12 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { sendCommand, getBridgeStatus } from "../../services/bridge.js";
+import { sendCommand, isBridgeReady } from "../../services/bridge.js";
 import { logAction, formatToolResult } from "../../services/logger.js";
 
 function notConnected(action: string) {
   return {
-    content: [{ type: "text" as const, text: `⚠ Studio One bridge not connected – cannot ${action}.` }],
+    content: [{ type: "text" as const, text: `⚠ Studio One bridge not ready – cannot ${action}.` }],
   };
 }
 
@@ -50,7 +50,7 @@ export function registerAutomationTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   }, async ({ trackName, parameter, points, isAbsolute, curveType }) => {
-    if (getBridgeStatus() !== "connected") {
+    if (!isBridgeReady()) {
       return notConnected(`add automation to "${trackName}/${parameter}"`);
     }
     try {
@@ -91,7 +91,7 @@ export function registerAutomationTools(server: McpServer): void {
     if (endBar <= startBar) {
       return { content: [{ type: "text", text: "✗ endBar must be > startBar" }], isError: true };
     }
-    if (getBridgeStatus() !== "connected") {
+    if (!isBridgeReady()) {
       return notConnected(`add automation ramp on "${trackName}/${parameter}"`);
     }
     try {
@@ -135,7 +135,7 @@ export function registerAutomationTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: true },
   }, async ({ trackName, parameter, startBar, endBar }) => {
-    if (getBridgeStatus() !== "connected") return notConnected("clear automation");
+    if (!isBridgeReady()) return notConnected("clear automation");
     try {
       const res = await sendCommand("clearAutomation", { trackName, parameter, startBar, endBar });
       if (!res.ok) throw new Error(res.error);

@@ -7,7 +7,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import fs from "fs";
 import path from "path";
-import { sendCommand, getBridgeStatus } from "../../services/bridge.js";
+import { sendCommand, isBridgeReady } from "../../services/bridge.js";
 import { logAction, formatToolResult } from "../../services/logger.js";
 import { guardPath } from "../../services/workspace.js";
 
@@ -25,7 +25,7 @@ const HARDSTYLE_SECTIONS = [
 
 function notConnected(action: string) {
   return {
-    content: [{ type: "text" as const, text: `⚠ Studio One bridge not connected – cannot ${action}.` }],
+    content: [{ type: "text" as const, text: `⚠ Studio One bridge not ready – cannot ${action}.` }],
   };
 }
 
@@ -43,7 +43,7 @@ export function registerArrangementTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   }, async ({ bar, name, color }) => {
-    if (getBridgeStatus() !== "connected") return notConnected(`add marker "${name}"`);
+    if (!isBridgeReady()) return notConnected(`add marker "${name}"`);
     try {
       const res = await sendCommand("addMarker", { bar, name, color });
       if (!res.ok) throw new Error(res.error);
@@ -63,7 +63,7 @@ export function registerArrangementTools(server: McpServer): void {
     inputSchema: {},
     annotations: { readOnlyHint: true, destructiveHint: false },
   }, async () => {
-    if (getBridgeStatus() !== "connected") return notConnected("read markers");
+    if (!isBridgeReady()) return notConnected("read markers");
     try {
       const res = await sendCommand("getMarkers");
       if (!res.ok) throw new Error(res.error);
@@ -87,7 +87,7 @@ export function registerArrangementTools(server: McpServer): void {
     if (!name && !bar) {
       return { content: [{ type: "text", text: "✗ Provide name or bar" }], isError: true };
     }
-    if (getBridgeStatus() !== "connected") return notConnected("delete marker");
+    if (!isBridgeReady()) return notConnected("delete marker");
     try {
       const res = await sendCommand("deleteMarker", { name, bar });
       if (!res.ok) throw new Error(res.error);
@@ -159,7 +159,7 @@ export function registerArrangementTools(server: McpServer): void {
       "Bridge": "#664400", "Climax": "#CC0000",
     };
 
-    if (getBridgeStatus() !== "connected") {
+    if (!isBridgeReady()) {
       // Fallback: describe the arrangement as text
       let bar = startBar;
       const lines = sections.map(s => {

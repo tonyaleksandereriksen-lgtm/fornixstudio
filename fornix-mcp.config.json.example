@@ -1,9 +1,9 @@
 {
   "allowedDirs": [
-    "C:\\Users\\Fornix\\Projects\\hardstyle-project"
+    "."
   ],
   "readOnlyDirs": [],
   "dryRunByDefault": false,
-  "gitRoot": "C:\\Users\\Fornix\\Projects\\hardstyle-project",
-  "s1BridgeEnabled": true
+  "gitRoot": ".",
+  "s1BridgeEnabled": false
 }

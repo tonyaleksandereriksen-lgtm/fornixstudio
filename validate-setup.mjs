@@ -134,12 +134,15 @@ async function main() {
       const cfg = JSON.parse(fs.readFileSync(configPath, "utf8"));
       ok("fornix-mcp.config.json found");
 
+      const configDir = path.dirname(configPath);
+
       if (cfg.allowedDirs?.length) {
         for (const dir of cfg.allowedDirs) {
-          if (fs.existsSync(dir)) {
-            ok(`Allowed dir exists: ${dir}`);
+          const resolvedDir = path.isAbsolute(dir) ? dir : path.resolve(configDir, dir);
+          if (fs.existsSync(resolvedDir)) {
+            ok(`Allowed dir exists: ${resolvedDir}`);
           } else {
-            warn(`Allowed dir not found: ${dir}`, "Create it or update config");
+            warn(`Allowed dir not found: ${resolvedDir}`, "Create it or update config");
           }
         }
       } else {
@@ -147,7 +150,7 @@ async function main() {
       }
 
       if (cfg.s1BridgeEnabled) {
-        ok("Studio One bridge enabled in config");
+        warn("Studio One bridge enabled in config", "Bridge support is experimental; keep fallback tools available");
       } else {
         warn("Studio One bridge disabled in config", "Set s1BridgeEnabled: true to enable DAW control");
       }
@@ -180,13 +183,74 @@ async function main() {
   section("Studio One Bridge");
   const portFree = await checkPortFree(7890);
   if (!portFree) {
-    ok("Port 7890 in use – Studio One Extension is likely running ✓");
+    warn("Port 7890 is in use", "This is only a hint. It does not prove the Fornix Studio One extension loaded successfully.");
   } else {
-    warn("Port 7890 is free – Studio One not running or Extension not loaded");
+    warn("Port 7890 is free – Studio One is not running, the extension is not loaded, or another bridge is not listening");
     warn("File-based fallback tools will still work");
   }
 
-  // ── 8. Claude Desktop config ──────────────────────────────────────────────
+  // ── 8. Extension startup markers ─────────────────────────────────────────
+  section("Extension Runtime Evidence");
+  const homeDir = process.env.USERPROFILE ?? process.env.HOME ?? "";
+  const extensionLogDir = path.join(homeDir, "Documents", "FornixMCP", "logs");
+
+  if (!fs.existsSync(extensionLogDir)) {
+    warn("Extension log directory not found: " + extensionLogDir,
+      "The Studio One extension has never written a startup marker here.\n" +
+      "    Either the extension has not been installed, not yet run, or\n" +
+      "    Host.FileSystem.writeFile is unavailable in this Studio One version.\n" +
+      "    See README.md for installation instructions.");
+  } else {
+    let logFiles;
+    try {
+      logFiles = fs.readdirSync(extensionLogDir).filter(
+        (f) => f.startsWith("startup-") || f.startsWith("shutdown-"),
+      );
+    } catch {
+      logFiles = [];
+    }
+
+    if (!logFiles.length) {
+      warn("Log directory exists but contains no startup/shutdown markers",
+        "The extension may have run but Host.FileSystem.writeFile was unavailable.\n" +
+        "    Check Studio One's script console for [FornixMCPBridge] lines.");
+    } else {
+      const startups = logFiles.filter((f) => f.startsWith("startup-"));
+      const shutdowns = logFiles.filter((f) => f.startsWith("shutdown-"));
+      ok(`Extension has been observed running: ${startups.length} startup marker(s), ${shutdowns.length} shutdown marker(s)`);
+
+      // Report the most recent startup marker contents
+      const sorted = startups
+        .map((f) => ({ name: f, ts: parseInt((f.match(/(\d{10,})/) || ["0", "0"])[1], 10) }))
+        .sort((a, b) => b.ts - a.ts);
+
+      if (sorted.length > 0) {
+        try {
+          const latest = JSON.parse(fs.readFileSync(path.join(extensionLogDir, sorted[0].name), "utf8"));
+          const hostInfo = latest.host ?? {};
+          if (hostInfo.websocketServer) {
+            ok("Host.WebSocket.createServer: available in last run");
+          } else {
+            warn("Host.WebSocket.createServer: NOT available in last run",
+              "The extension ran but could not open a WebSocket server port.\n" +
+              "    Port 7890 will never be opened until this API becomes available.\n" +
+              "    Bridge mode cannot work; use file-based fallback tools.");
+          }
+          if (hostInfo.filesystemWrite) {
+            ok("Host.FileSystem.writeFile: available in last run");
+          } else {
+            warn("Host.FileSystem.writeFile: NOT available in last run");
+          }
+          const ts = latest.timestamp ? new Date(latest.timestamp).toLocaleString() : "unknown time";
+          ok("Last startup: " + ts);
+        } catch {
+          warn("Could not parse most recent startup marker");
+        }
+      }
+    }
+  }
+
+  // ── 9. Claude Desktop config ──────────────────────────────────────────────
   section("Claude Desktop");
   const claudeConfigPaths = [
     path.join(process.env.APPDATA ?? "", "Claude", "claude_desktop_config.json"),

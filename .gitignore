@@ -4,3 +4,9 @@ dist/
 *.local.json
 .DS_Store
 Thumbs.db
+
+# Local editor / IDE (machine-specific)
+.vscode/
+
+# Working diff exports (keep out of version control by default)
+*.diff
