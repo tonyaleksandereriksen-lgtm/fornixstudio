@@ -1,8 +1,8 @@
 // ─── Fornix Studio MCP – Studio One: File-Based Fallback ─────────────────────
 //
 // When the Studio One bridge is not available, these tools produce structured
-// instruction files that can be loaded/reviewed manually, or imported by the
-// Studio One Extension the next time S1 is open.
+// instruction files for manual handoff and planning. If the experimental
+// Studio One extension is installed and actually working, it may also consume them.
 //
 // Category B (Indirect / Bridge-layer):
 //   s1_export_instruction, s1_generate_track_plan, s1_generate_bus_template
@@ -12,7 +12,7 @@ import path from "path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { logAction, formatToolResult } from "../../services/logger.js";
-import { guardPath } from "../../services/workspace.js";
+import { guardPath, isReadOnly } from "../../services/workspace.js";
 
 export function registerFallbackTools(server: McpServer): void {
 
@@ -21,8 +21,8 @@ export function registerFallbackTools(server: McpServer): void {
   server.registerTool("s1_export_instruction", {
     title: "Export S1 Instruction File",
     description:
-      "Write a structured JSON instruction file that the Studio One Extension will execute on next load. " +
-      "Use when bridge is unavailable. Extension polls for this file at startup.",
+      "Write a structured JSON instruction file for manual DAW handoff. " +
+      "Use when the live bridge is unavailable. The experimental Studio One extension may also poll and consume it if installed and working.",
     inputSchema: {
       outputDir: z.string().describe("Directory to write the instruction file"),
       instructions: z.array(z.object({
@@ -35,6 +35,7 @@ export function registerFallbackTools(server: McpServer): void {
   }, async ({ outputDir, instructions, label }) => {
     try {
       const abs = guardPath(outputDir);
+      if (isReadOnly(abs)) throw new Error(`${abs} is in a read-only directory`);
       fs.mkdirSync(abs, { recursive: true });
 
       const filename = `s1-instructions-${label}-${Date.now()}.json`;
@@ -63,7 +64,7 @@ export function registerFallbackTools(server: McpServer): void {
     title: "Generate Track Plan",
     description:
       "Generate a human-readable and machine-readable track setup plan for a Hardstyle/trance project. " +
-      "Export as Markdown + JSON for manual review or bridge import.",
+      "Export as Markdown + JSON for manual review, with optional experimental bridge import.",
     inputSchema: {
       outputDir: z.string().describe("Directory to write plan files"),
       songTitle: z.string().default("Untitled").describe("Song working title"),
@@ -81,6 +82,7 @@ export function registerFallbackTools(server: McpServer): void {
   }, async ({ outputDir, songTitle, tempo, tracks }) => {
     try {
       const abs = guardPath(outputDir);
+      if (isReadOnly(abs)) throw new Error(`${abs} is in a read-only directory`);
       fs.mkdirSync(abs, { recursive: true });
 
       const ts = Date.now();
@@ -129,7 +131,7 @@ export function registerFallbackTools(server: McpServer): void {
     title: "Generate Fornix Bus Template",
     description:
       "Generate the standard Fornix hardstyle bus routing template as a JSON instruction set " +
-      "that can be applied via the bridge or loaded manually.",
+      "for manual use, or for optional import by the experimental bridge.",
     inputSchema: {
       outputDir: z.string().describe("Output directory"),
       includePlugins: z.boolean().default(true).describe("Include standard Fornix plugin assignments"),
@@ -138,6 +140,7 @@ export function registerFallbackTools(server: McpServer): void {
   }, async ({ outputDir, includePlugins }) => {
     try {
       const abs = guardPath(outputDir);
+      if (isReadOnly(abs)) throw new Error(`${abs} is in a read-only directory`);
       fs.mkdirSync(abs, { recursive: true });
 
       const buses = [

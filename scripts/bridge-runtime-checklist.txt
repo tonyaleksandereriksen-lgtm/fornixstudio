@@ -1,0 +1,257 @@
+Fornix Studio MCP — Bridge Runtime Verification Runbook
+=========================================================
+
+Tests and mocks do NOT prove Studio One executed anything.
+This runbook is the only way to establish real runtime evidence.
+Work through every stage in order. Do not skip ahead.
+If any stage fails, the product stays file-first / fallback-first.
+
+All tool calls go through Claude with the MCP server running.
+All "check" steps require you to look at the REAL Studio One UI.
+
+=============================================================
+STAGE 1 — Extension loaded in Studio One
+=============================================================
+
+Goal: confirm the extension file was actually executed inside Studio One.
+
+Steps:
+  a) Install the extension: copy studio-one-extension/main.js into
+     Studio One's user scripts directory (see README for the path).
+  b) Open Studio One (or restart it if already open).
+  c) Wait for Studio One to finish loading.
+  d) Run this MCP tool:
+       s1_read_extension_log
+
+Pass criteria:
+  - Tool reports: "Found N extension log file(s)"
+  - "The extension HAS been observed executing inside Studio One."
+  - At least one startup-*.json file exists in Documents/FornixMCP/logs/
+  - lastStartupAt timestamp is recent (matches when you opened Studio One)
+
+Fail criteria:
+  - "Extension log directory not found"
+  - "Log directory exists but contains no startup/shutdown markers"
+
+If fail: the extension did not execute. Check the installation path.
+Do NOT proceed to Stage 2.
+
+=============================================================
+STAGE 2 — WebSocket listener created
+=============================================================
+
+Goal: confirm Host.WebSocket.createServer was available and port 7890
+      is actually open and accepting connections.
+
+Steps:
+  a) In the output from s1_read_extension_log (Stage 1 result),
+     look at the startup marker content.
+  b) Check the field: host.websocketServer (true/false)
+  c) Optionally: with Studio One running, verify port 7890 is open
+     (PowerShell: Test-NetConnection -Port 7890 -ComputerName 127.0.0.1)
+
+Pass criteria:
+  - host.websocketServer: true in the startup marker
+  - Port 7890 accepts a connection (TcpTestSucceeded: True)
+
+Fail criteria:
+  - host.websocketServer: false or missing in the startup marker
+  - Port 7890 refuses connection
+
+If fail: Host.WebSocket.createServer is unavailable in this Studio One
+version. Bridge mode cannot work. File-based tools are the only option.
+Do NOT proceed to Stage 3.
+
+=============================================================
+STAGE 3 — MCP handshake completes
+=============================================================
+
+Goal: confirm the MCP server connected to Studio One and completed
+      the ping + capabilities exchange.
+
+Steps:
+  a) Start the MCP server with s1BridgeEnabled: true in config.
+  b) Watch stderr output on startup. Look for:
+       [s1-bridge] Socket connected; running runtime probe handshake
+       [s1-bridge] Handshake: ping OK (timestamp) — extension router responded
+       [s1-bridge] Handshake: capabilities OK (timestamp) — ...
+       [s1-bridge] Handshake complete; bridge marked ready
+  c) Run this MCP tool:
+       s1_probe_runtime
+
+Pass criteria:
+  In s1_probe_runtime output:
+  - state: "ready"
+  - lifecyclePhase: "handshake_ok"
+  - handshakeOk: true
+  - proof.extensionLoaded: true
+  - proof.listenerCreated: true
+  - proof.handshakeOk: true
+  - proof.liveReadVerified: false   (expected at this stage)
+  - proof.nextRequiredState: "live_read_verified"
+  - proof.packageMode: "bridge_experimental"
+  - extensionRespondedAt: not null
+  - lastHandshakeAt: not null
+
+Fail criteria:
+  - lifecyclePhase: "degraded" or "error"
+  - lastError.code is set
+  - handshakeOk: false
+
+If fail: check that Studio One is open, the extension is loaded, and
+port 7890 is listening. Also check stderr for COMMAND_TIMEOUT or
+HANDSHAKE_FAILED messages.
+Do NOT proceed to Stage 4.
+
+=============================================================
+STAGE 4 — One verified live READ from Studio One
+=============================================================
+
+Goal: confirm data flows from Studio One into the MCP server, and
+      that the value matches what you see in the UI.
+
+Steps:
+  a) Note the current tempo in Studio One (visible in the transport bar).
+  b) Run this MCP tool:
+       s1_get_transport_state
+  c) Compare the returned tempo value with what you see in Studio One.
+  d) If they match, the read is verified. If they differ, the socket
+     may be connected to a stale session or wrong process.
+
+Pass criteria:
+  - s1_get_transport_state returns data (no "bridge not ready" error)
+  - Returned tempo matches the tempo shown in Studio One's transport bar
+  - After the call, run s1_probe_runtime again and verify:
+      proof.liveReadVerified: true
+      lifecyclePhase: "live_read_verified"
+      proof.nextRequiredState: "live_write_verified"
+      runtimeReadVerifiedAt: not null (timestamp of this call)
+
+Fail criteria:
+  - "bridge is not ready" or "CAPABILITY_MISSING" error
+  - Returned data does not match what Studio One shows
+  - proof.liveReadVerified is still false after the call
+
+If fail: data may be coming from a mock or stale socket. Do not assume
+live control. Do NOT proceed to Stage 5.
+
+=============================================================
+STAGE 5 — One verified live WRITE to Studio One
+=============================================================
+
+Goal: confirm a command from the MCP server actually changes state
+      in the running Studio One instance.
+
+Steps:
+  a) Note the current tempo in Studio One.
+  b) Pick a test BPM that is clearly different (e.g., current ± 10).
+  c) Run this MCP tool:
+       s1_set_tempo   bpm: <test value>
+  d) Immediately look at Studio One's transport bar.
+  e) Confirm the tempo changed to the test value.
+  f) (Optional) Restore the original tempo with s1_set_tempo.
+
+Pass criteria:
+  - s1_set_tempo returns success (no error)
+  - Studio One's tempo bar changed to the test value (human-verified)
+  - After the call, run s1_probe_runtime and verify:
+      proof.liveWriteVerified: true
+      proof.runtimeVerified: true
+      lifecyclePhase: "runtime_verified"
+      proof.nextRequiredState: null
+      proof.packageMode: "runtime_verified"
+      runtimeWriteVerifiedAt: not null
+
+Fail criteria:
+  - s1_set_tempo returns "LIVE_READ_REQUIRED" — you skipped Stage 4
+  - s1_set_tempo returns an error from the bridge
+  - Studio One tempo did NOT change (data went somewhere else)
+  - proof.runtimeVerified is still false after the call
+
+If fail: live write did not reach Studio One. Bridge control is not
+proven. Product remains file-first.
+
+=============================================================
+STAGE 6 — Dashboard and validate-setup match observed reality
+=============================================================
+
+Goal: confirm the dashboard and validator report the same truth as
+      your verified runtime state.
+
+Steps:
+  a) Open http://localhost:7891 in a browser.
+  b) Navigate to Workspace panel > Studio One Bridge section.
+
+Pass criteria (after Stages 1–5 complete):
+  - Header pill shows "S1 Runtime verified" (green)
+  - extensionLoaded: ✓
+  - listenerCreated: ✓
+  - handshakeOk: ✓
+  - liveReadVerified: ✓
+  - liveWriteVerified: ✓
+  - runtimeVerified: ✓
+  - packageMode: "runtime_verified"
+  - nextRequiredState: none (runtime verified)
+  - Extension evidence section shows startup marker found and lastStartupAt
+
+Steps (validate-setup):
+  c) Run: node validate-setup.mjs
+  d) Section "Bridge lifecycle" should show warnings (not errors).
+  e) Section "Extension Runtime Evidence" should show:
+       ✓ Extension has been observed running: N startup marker(s)
+       ✓ Host.WebSocket.createServer: available in last run
+       ✓ Host.FileSystem.writeFile: available in last run
+
+Fail criteria:
+  - Dashboard shows any proof stage as ✗ that you know passed
+  - Dashboard shows packageMode inconsistent with your runtime evidence
+  - validate-setup shows "Extension log directory not found" after you
+    confirmed Stage 1 passed
+
+If fail: the dashboard or validator is lagging behind actual state.
+Run s1_probe_runtime to get the live MCP server view, and compare it
+to what the dashboard shows. The dashboard polls every 8 seconds.
+
+=============================================================
+EVIDENCE RECORD — Fill in after each stage passes
+=============================================================
+
+Date of verification attempt:
+Studio One version:
+Extension installed path:
+
+Stage 1 — Extension loaded
+  startup marker file: [filename]
+  lastStartupAt: [timestamp]
+  PASS / FAIL
+
+Stage 2 — Listener created
+  host.websocketServer in marker: true / false
+  port 7890 open: yes / no
+  PASS / FAIL
+
+Stage 3 — Handshake
+  MCP stderr handshake lines: yes / no
+  s1_probe_runtime lifecyclePhase: [value]
+  s1_probe_runtime proof.nextRequiredState: [value]
+  PASS / FAIL
+
+Stage 4 — Live read verified
+  Studio One tempo before: [value]
+  s1_get_transport_state returned tempo: [value]
+  Values match: yes / no
+  proof.liveReadVerified after: true / false
+  PASS / FAIL
+
+Stage 5 — Live write verified
+  Test BPM sent: [value]
+  Studio One tempo changed to test BPM: yes / no (human-verified)
+  proof.runtimeVerified after: true / false
+  PASS / FAIL
+
+Stage 6 — Dashboard truth
+  Dashboard pill: [label]
+  proof stages all ✓: yes / no
+  validate-setup extension section: PASS / FAIL
+
+Overall result: PASS / FAIL

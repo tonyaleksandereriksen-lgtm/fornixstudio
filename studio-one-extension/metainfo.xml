@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MetaInformation>
+	<Attribute id="Package:ID" value="com.fornix.mcp-bridge"/>
+	<Attribute id="Package:Name" value="Fornix MCP Bridge"/>
+	<Attribute id="Package:Description" value="Startup marker writer for Fornix MCP Stage 1 smoke test"/>
+	<Attribute id="Package:Version" value="1.0.0"/>
+	<Attribute id="Package:Vendor" value="Fornix"/>
+</MetaInformation>

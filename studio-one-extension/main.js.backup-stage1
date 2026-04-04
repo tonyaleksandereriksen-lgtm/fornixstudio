@@ -1,0 +1,339 @@
+// ─── Fornix MCP Bridge – Stage 1 Smoke Test ─────────────────────────────────
+// Purpose: prove whether Studio One can load and execute the extension at all.
+// This file is intentionally minimal and maximally runtime-compatible.
+// No WebSocket server. No live bridge logic.
+/* global Host */
+
+var EXTENSION_VERSION = "1.0.0-smoke";
+
+function activate() {
+  log("Activating Fornix MCP Bridge Stage 1 smoke test v" + EXTENSION_VERSION);
+
+  if (writeMarker("startup")) {
+    log("Startup marker written");
+  } else {
+    log("Startup marker write failed");
+  }
+}
+
+function deactivate() {
+  if (writeMarker("shutdown")) {
+    log("Shutdown marker written");
+  } else {
+    log("Shutdown marker write failed");
+  }
+
+  log("Deactivated Fornix MCP Bridge Stage 1 smoke test");
+}
+
+function writeMarker(eventName) {
+  var documentsPath;
+  var rootDir;
+  var logDir;
+  var fileName;
+  var filePath;
+  var text;
+
+  if (typeof Host === "undefined" || !Host) {
+    return false;
+  }
+
+  if (!Host.FileSystem || typeof Host.FileSystem.writeFile !== "function") {
+    return false;
+  }
+
+  documentsPath = getDocumentsPath();
+  if (!documentsPath) {
+    return false;
+  }
+
+  rootDir = joinPath(documentsPath, "FornixMCP");
+  logDir = joinPath(rootDir, "logs");
+  ensureDirectory(rootDir);
+  ensureDirectory(logDir);
+
+  fileName = eventName + "-" + String(new Date().getTime()) + ".json";
+  filePath = joinPath(logDir, fileName);
+  text = buildMarkerText(eventName);
+
+  try {
+    Host.FileSystem.writeFile(filePath, text);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function buildMarkerText(eventName) {
+  var timestamp;
+  var documentsPath;
+
+  timestamp = "";
+  documentsPath = "";
+
+  try {
+    timestamp = new Date().toISOString();
+  } catch (_error) {
+    timestamp = "";
+  }
+
+  try {
+    documentsPath = getDocumentsPath();
+  } catch (_error2) {
+    documentsPath = "";
+  }
+
+  return (
+    "{\n" +
+    '  "event": "' + escapeJson(eventName) + '",\n' +
+    '  "version": "' + escapeJson(EXTENSION_VERSION) + '",\n' +
+    '  "timestamp": "' + escapeJson(timestamp) + '",\n' +
+    '  "documentsPath": "' + escapeJson(documentsPath) + '",\n' +
+    '  "host": {\n' +
+    '    "hasHost": ' + boolText(typeof Host !== "undefined" && !!Host) + ",\n" +
+    '    "hasFileSystem": ' + boolText(!!(Host && Host.FileSystem)) + ",\n" +
+    '    "hasWriteFile": ' + boolText(!!(Host && Host.FileSystem && typeof Host.FileSystem.writeFile === "function")) + "\n" +
+    "  }\n" +
+    "}\n"
+  );
+}
+
+function ensureDirectory(pathValue) {
+  if (!pathValue) {
+    return;
+  }
+
+  if (typeof Host === "undefined" || !Host || !Host.FileSystem) {
+    return;
+  }
+
+  if (typeof Host.FileSystem.createDirectory !== "function") {
+    return;
+  }
+
+  try {
+    Host.FileSystem.createDirectory(pathValue);
+  } catch (_error) {
+    // Ignore directory creation failures in smoke mode.
+  }
+}
+
+function getDocumentsPath() {
+  if (typeof Host === "undefined" || !Host) {
+    return "";
+  }
+
+  if (typeof Host.getDocumentsPath === "function") {
+    try {
+      return Host.getDocumentsPath() || "";
+    } catch (_error) {
+      return "";
+    }
+  }
+
+  return "";
+}
+
+function joinPath(left, right) {
+  if (!left) {
+    return right || "";
+  }
+
+  if (!right) {
+    return left;
+  }
+
+  if (endsWithSlash(left)) {
+    return left + right;
+  }
+
+  return left + "/" + right;
+}
+
+function endsWithSlash(value) {
+  var last;
+
+  if (!value || !value.length) {
+    return false;
+  }
+
+  last = value.charAt(value.length - 1);
+  return last === "/" || last === "\\";
+}
+
+function boolText(value) {
+  return value ? "true" : "false";
+}
+
+function escapeJson(value) {
+  var text;
+
+  if (value === null || typeof value === "undefined") {
+    return "";
+  }
+
+  text = String(value);
+  text = text.replace(/\\/g, "\\\\");
+  text = text.replace(/"/g, '\\"');
+  text = text.replace(/\r/g, "\\r");
+  text = text.replace(/\n/g, "\\n");
+  return text;
+}
+
+function successResponse(command, data, requestId) {
+  return {
+    requestId: typeof requestId === "undefined" ? null : requestId,
+    ok: true,
+    command: command,
+    data: data || {}
+  };
+}
+
+function errorResponse(command, errorCode, errorMessage, requestId) {
+  return {
+    requestId: typeof requestId === "undefined" ? null : requestId,
+    ok: false,
+    command: command,
+    errorCode: errorCode,
+    errorMessage: errorMessage
+  };
+}
+
+function parseRawMessage(raw) {
+  var parsed;
+
+  try {
+    parsed = typeof raw === "string" ? JSON.parse(raw) : JSON.parse(String(raw));
+    if (parsed && typeof parsed === "object") {
+      return parsed;
+    }
+    return { command: null, params: {}, requestId: null };
+  } catch (_error) {
+    return null;
+  }
+}
+
+function getHostInfo() {
+  return {
+    host: {
+      exists: typeof Host !== "undefined" && !!Host,
+      logging: !!(typeof Host !== "undefined" && Host && Host.Console && typeof Host.Console.writeLine === "function"),
+      filesystem: !!(typeof Host !== "undefined" && Host && Host.FileSystem),
+      filesystemWrite: !!(typeof Host !== "undefined" && Host && Host.FileSystem && typeof Host.FileSystem.writeFile === "function"),
+      websocketServer: false,
+      commands: false
+    },
+    song: {
+      exists: false,
+      activeSongAvailable: false
+    }
+  };
+}
+
+function getCapabilities() {
+  return {
+    transport: false,
+    song: false,
+    tracks: false,
+    plugins: false,
+    automation: false,
+    midi: false,
+    filesystem: !!(typeof Host !== "undefined" && Host && Host.FileSystem && typeof Host.FileSystem.writeFile === "function"),
+    websocketServer: false
+  };
+}
+
+function runSelfTest() {
+  return {
+    smokeMode: true,
+    markerWritePossible: !!(typeof Host !== "undefined" && Host && Host.FileSystem && typeof Host.FileSystem.writeFile === "function"),
+    documentsPath: getDocumentsPath()
+  };
+}
+
+function executeCommand(command, params, requestId) {
+  if (command === "ping") {
+    return successResponse("ping", {
+      pong: true,
+      version: EXTENSION_VERSION,
+      smokeMode: true
+    }, requestId);
+  }
+
+  if (command === "getHostInfo") {
+    return successResponse("getHostInfo", getHostInfo(), requestId);
+  }
+
+  if (command === "getCapabilities") {
+    return successResponse("getCapabilities", getCapabilities(), requestId);
+  }
+
+  if (command === "runSelfTest") {
+    return successResponse("runSelfTest", runSelfTest(), requestId);
+  }
+
+  return errorResponse(
+    command || "unknown",
+    "UNKNOWN_COMMAND",
+    "Unknown command: " + String(command),
+    requestId
+  );
+}
+
+function handle(client, raw) {
+  var parsed;
+  var params;
+  var requestId;
+  var response;
+
+  parsed = parseRawMessage(raw);
+  if (!parsed) {
+    response = errorResponse("unknown", "INVALID_JSON", "Message must be valid JSON", null);
+  } else {
+    params = parsed.params || {};
+    requestId = typeof parsed.requestId === "undefined" ? null : parsed.requestId;
+    response = executeCommand(parsed.command, params, requestId);
+  }
+
+  if (client && typeof client.send === "function") {
+    client.send(JSON.stringify(response));
+  }
+
+  return response;
+}
+
+function exportTestHooks() {
+  if (typeof module === "undefined" || !module || !module.exports) {
+    return;
+  }
+
+  module.exports.__test = {
+    handle: handle,
+    executeCommand: executeCommand
+  };
+}
+
+function log(message) {
+  if (typeof Host === "undefined" || !Host) {
+    return;
+  }
+
+  try {
+    if (Host.Console && typeof Host.Console.writeLine === "function") {
+      Host.Console.writeLine("[FornixMCPBridge] " + String(message));
+      return;
+    }
+  } catch (_error) {
+    // Ignore logging failures.
+  }
+
+  try {
+    if (typeof Host.log === "function") {
+      Host.log("[FornixMCPBridge] " + String(message));
+    }
+  } catch (_error2) {
+    // Ignore logging failures.
+  }
+}
+
+exportTestHooks();

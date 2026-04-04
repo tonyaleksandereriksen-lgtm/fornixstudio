@@ -1,16 +1,19 @@
 {
   "name": "fornix-studio-mcp",
   "version": "1.0.0",
-  "description": "MCP server for Fornix – AI-controlled Studio One + project workspace",
+  "description": "MCP server for Fornix \u2013 project workspace tools with optional experimental Studio One bridge",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsc --watch",
-    "clean": "rm -rf dist",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "validate": "node validate-setup.mjs",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test": "npm run build && node --test tests/bridge/bridge-handshake.test.js tests/bridge/bridge-cleanup.test.js tests/bridge/bridge-write-gate.test.js tests/extension/router.test.js tests/production/production-package.test.js tests/server/tool-manifest.test.js",
+    "test:bridge": "npm run build && node --test tests/bridge/bridge-handshake.test.js tests/bridge/bridge-cleanup.test.js",
+    "test:extension": "node --test tests/extension/router.test.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.10.1",

@@ -1,0 +1,59 @@
+{
+  "packageFormatVersion": "1.1.0",
+  "generatorTool": "fornix_regenerate_package_section",
+  "generatorVersion": "1.0.0",
+  "generationTimestamp": "2026-04-03T22:20:17.079Z",
+  "lastUpdatedTimestamp": "2026-04-03T22:20:17.093Z",
+  "updatedSections": [
+    "project_plan",
+    "routing",
+    "automation",
+    "mix",
+    "sound_design",
+    "checklist"
+  ],
+  "trackName": "Cathedral of Ruin",
+  "trackSlug": "cathedral-of-ruin",
+  "artistName": "Fornix",
+  "tempo": 150,
+  "keySignature": "F# minor",
+  "styleVariant": "rawphoric",
+  "leadStyle": "hybrid",
+  "dropStrategy": "anti-climax-to-melodic",
+  "energyProfile": "late-payoff",
+  "targetBars": 160,
+  "creativeBrief": "Dark cinematic intro, hostile anti-climax pressure, emotional final payoff.",
+  "mixConcerns": [
+    "kick tail against reverse bass",
+    "lead harshness in the climax",
+    "wet FX before the drop"
+  ],
+  "signatureHooks": [
+    "cathedral motif",
+    "hybrid lead",
+    "hostile anti-climax"
+  ],
+  "mood": "dark cathedral tension",
+  "focus": "drop contrast and hook clarity",
+  "concerns": [
+    "vocal center conflict",
+    "transition wash"
+  ],
+  "substyle": "rawphoric",
+  "kickStyle": "cleaner punch-focused tok and shorter tail",
+  "antiClimaxStyle": "aggressive screech-led anti-climax",
+  "arrangementFocus": "long-form tension and reveal",
+  "vocalMode": "instrumental",
+  "djUtilityPriority": "medium",
+  "referenceNotes": [
+    "intro must feel cinematic not filler",
+    "save widest lead for final payoff"
+  ],
+  "sectionGoals": {
+    "Intro": "Establish ruin atmosphere without revealing the drop payload.",
+    "Drop 1": "Hit with anti-climax pressure and keep the kick center dominant."
+  },
+  "cinematicIntensity": "high",
+  "aggressionLevel": "high",
+  "emotionalTone": "melancholic but violent"
+}
