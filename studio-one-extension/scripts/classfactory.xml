@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ClassFactory>
+	<ScriptClass
+		classID="{DBFCEAE6-9DC2-4134-AB5D-D75F567E784E}"
+		category="FrameworkService"
+		name="Fornix MCP Bridge"
+		sourceFile="main.js"
+		functionName="createInstance">
+	</ScriptClass>
+</ClassFactory>
