@@ -396,7 +396,11 @@ module.exports = { activate, deactivate };
 // In production this would be merged into the main switch above.
 
 const _origHandle = handle;
-function handle(client, raw) {
+// Use var assignment (not a function declaration) so _origHandle captures the
+// original handle before this replacement takes effect. Function declarations
+// are hoisted above the const assignment, causing infinite recursion.
+// eslint-disable-next-line no-func-assign
+var handle = function handleWithAutomation(client, raw) {
   let msg;
   try { msg = JSON.parse(raw); } catch { reply(client, null, false, null, 'Invalid JSON'); return; }
   const { command, params = {}, requestId } = msg;

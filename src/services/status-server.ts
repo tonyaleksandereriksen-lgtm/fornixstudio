@@ -8,7 +8,7 @@ import http from "http";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { getBridgeStatus } from "./bridge.js";
+import { getBridgeStatus, getBridgeRuntimeStatus } from "./bridge.js";
 import { readRecentLogs } from "./logger.js";
 import { getStatus as getGitStatus } from "./checkpoint.js";
 import { getConfig } from "./workspace.js";
@@ -54,7 +54,7 @@ export function startStatusServer(): void {
 
         const payload = {
           server: { version: SERVER_VERSION, uptimeSeconds: Math.round((Date.now() - _startTime) / 1000) },
-          bridge: { status: getBridgeStatus() },
+          bridge: { status: getBridgeStatus(), runtime: getBridgeRuntimeStatus() },
           workspace: { allowedDirs: cfg.allowedDirs, dryRunByDefault: cfg.dryRunByDefault ?? false },
           git: gitStatus,
           stats: { toolCallsThisSession: _toolCallCount },

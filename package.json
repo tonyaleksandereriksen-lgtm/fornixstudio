@@ -10,7 +10,10 @@
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
     "validate": "node validate-setup.mjs",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test": "npm run build && node --test tests/bridge/bridge-handshake.test.js tests/bridge/bridge-cleanup.test.js tests/extension/router.test.js",
+    "test:bridge": "npm run build && node --test tests/bridge/bridge-handshake.test.js tests/bridge/bridge-cleanup.test.js",
+    "test:extension": "node --test tests/extension/router.test.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.10.1",

@@ -77,6 +77,91 @@ export interface S1Response {
   error?: string;
 }
 
+// ── Bridge runtime proof model ───────────────────────────────────────────────
+
+export type BridgeRuntimeState =
+  | "disconnected"
+  | "connecting"
+  | "degraded"
+  | "ready";
+
+export type BridgeLifecyclePhase =
+  | "idle"
+  | "handshake_ok"
+  | "live_read_verified"
+  | "runtime_verified";
+
+export type BridgeErrorCode =
+  | "HANDSHAKE_FAILED"
+  | "COMMAND_TIMEOUT"
+  | "LIVE_READ_REQUIRED"
+  | "DISCONNECTED"
+  | "SEND_FAILED";
+
+export interface BridgeProof {
+  packageMode: "bridge_experimental";
+  extensionLoaded: boolean;
+  listenerCreated: boolean;
+  handshakeOk: boolean;
+  liveReadVerified: boolean;
+  liveWriteVerified: boolean;
+  nextRequiredState: BridgeLifecyclePhase | null;
+}
+
+export interface BridgeLastError {
+  code: BridgeErrorCode;
+  message: string;
+  ts: string;
+}
+
+export interface BridgeCapabilities {
+  commands: string[];
+  apiVersion: string;
+  extensionVersion: string;
+}
+
+export interface BridgeRuntimeStatus {
+  state: BridgeRuntimeState;
+  lifecyclePhase: BridgeLifecyclePhase;
+  proof: BridgeProof;
+  capabilities: BridgeCapabilities | null;
+  lastError: BridgeLastError | null;
+  extensionRespondedAt: string | null;
+  lastHandshakeAt: string | null;
+  lastPingAt: string | null;
+  connectedAt: string | null;
+}
+
+export const BRIDGE_READ_COMMANDS = new Set([
+  "getTransportState",
+  "getSongMetadata",
+  "getMarkers",
+  "getPluginParams",
+]);
+
+export const BRIDGE_WRITE_COMMANDS = new Set([
+  "setTempo",
+  "setLoopRange",
+  "createTrack",
+  "renameTrack",
+  "setTrackMute",
+  "setTrackSolo",
+  "setTrackVolume",
+  "createSend",
+  "addPlugin",
+  "setPluginParam",
+  "loadPluginPreset",
+  "addMidiNotes",
+  "clearMidiPart",
+  "quantizePart",
+  "addMarker",
+  "addMarkersMulti",
+  "deleteMarker",
+  "triggerMacro",
+  "addAutomationPoints",
+  "clearAutomation",
+]);
+
 // ── Track types ───────────────────────────────────────────────────────────────
 
 export type TrackType =
