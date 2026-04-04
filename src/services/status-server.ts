@@ -107,6 +107,11 @@ export const TOOL_MANIFEST = [
   { name: "fornix_get_package_summary",         family: "Production Package", readOnly: true  },
   { name: "fornix_generate_mix_actions",        family: "Mix",                readOnly: false },
 
+  // Workspace
+  { name: "fornix_create_workspace",          family: "Workspace",          readOnly: false },
+  { name: "fornix_get_workspace_summary",     family: "Workspace",          readOnly: true  },
+  { name: "fornix_add_track_to_workspace",    family: "Workspace",          readOnly: false },
+
   // Session
   { name: "session_kickstart",           family: "Session",        readOnly: false },
   { name: "session_apply_mix_preset",    family: "Session",        readOnly: false },

@@ -4,6 +4,7 @@
 import fs from "fs";
 import path from "path";
 import { SERVER_VERSION } from "../constants.js";
+import { workspaceExists, readWorkspace } from "./workspace-profile.js";
 import {
   diffPackageProfile,
   getSectionPlanForSection,
@@ -148,6 +149,8 @@ export interface ProductionPackageMetadata {
   cinematicIntensity?: string;
   aggressionLevel?: string;
   emotionalTone?: string;
+  /** If this package was generated from a workspace, records the workspace name for provenance. */
+  workspaceRef?: string;
   /** Canonical package-level resolved profile (identity); top-level style fields mirror this after writes. */
   resolvedProfile?: StoredSectionProfile;
   /** Per-section resolved profiles; may differ after selective regeneration. */
@@ -1989,6 +1992,16 @@ export function buildProductionPackageContents(input: ProductionPackageInput): O
 
 export function writeProductionPackage(input: ProductionPackageInput): ProductionPackageResult {
   const { packageRoot, files, filesContent, mixActions, trackSlug, metadataPath, metadata } = buildProductionPackageContents(input);
+
+  // Workspace provenance: if outputDir has a workspace.json, record the workspace name.
+  if (workspaceExists(input.outputDir)) {
+    try {
+      const ws = readWorkspace(input.outputDir);
+      metadata.workspaceRef = ws.name;
+    } catch {
+      // Non-fatal — workspace detection is best-effort.
+    }
+  }
 
   fs.mkdirSync(packageRoot, { recursive: true });
 
