@@ -11,8 +11,9 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { sendCommand, isBridgeReady } from "../../services/bridge.js";
+import { sendCommand } from "../../services/bridge.js";
 import { logAction, formatToolResult } from "../../services/logger.js";
+import { requireBridgeWrite } from "./bridge-guard.js";
 
 // Shared position schema
 const PositionSchema = z.object({
@@ -35,16 +36,6 @@ const NoteSchema = z.object({
   }).describe("Note duration"),
   channel: z.number().int().min(1).max(16).default(1),
 });
-
-function notConnected(action: string) {
-  return {
-    content: [{
-      type: "text" as const,
-      text: `⚠ Studio One bridge not ready – cannot ${action}.\n` +
-        `Use s1_export_instruction with MIDI commands as a fallback.`,
-    }],
-  };
-}
 
 // MIDI note name helpers
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -85,7 +76,8 @@ export function registerMidiTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   }, async ({ trackName, notes, partName, createPartIfMissing }) => {
-    if (!isBridgeReady()) return notConnected(`add MIDI notes to "${trackName}"`);
+    const blocked = requireBridgeWrite(`add MIDI notes to "${trackName}"`);
+    if (blocked) return { content: [{ type: "text", text: blocked }] };
     try {
       const res = await sendCommand("addMidiNotes", {
         trackName,
@@ -140,7 +132,8 @@ export function registerMidiTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   }, async ({ trackName, pitches, start, duration, velocity }) => {
-    if (!isBridgeReady()) return notConnected(`add chord to "${trackName}"`);
+    const blocked = requireBridgeWrite(`add chord to "${trackName}"`);
+    if (blocked) return { content: [{ type: "text", text: blocked }] };
     try {
       // Resolve note names to MIDI numbers
       const resolvedPitches = pitches.map(p => {
@@ -202,7 +195,8 @@ export function registerMidiTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   }, async ({ trackName, startBar, lengthBars, steps, swing }) => {
-    if (!isBridgeReady()) return notConnected(`add drum pattern to "${trackName}"`);
+    const blocked = requireBridgeWrite(`add drum pattern to "${trackName}"`);
+    if (blocked) return { content: [{ type: "text", text: blocked }] };
     try {
       const GM_MAP: Record<string, number> = {
         kick: 36, snare: 38, hihat: 42, openHihat: 46, clap: 39,
@@ -280,7 +274,8 @@ export function registerMidiTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: true },
   }, async ({ trackName, startBar, endBar }) => {
-    if (!isBridgeReady()) return notConnected(`clear MIDI part on "${trackName}"`);
+    const blocked = requireBridgeWrite(`clear MIDI part on "${trackName}"`);
+    if (blocked) return { content: [{ type: "text", text: blocked }] };
     try {
       const res = await sendCommand("clearMidiPart", { trackName, startBar, endBar });
       if (!res.ok) throw new Error(res.error);
@@ -308,7 +303,8 @@ export function registerMidiTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   }, async ({ trackName, startBar, endBar, gridValue, strength }) => {
-    if (!isBridgeReady()) return notConnected(`quantize "${trackName}"`);
+    const blocked = requireBridgeWrite(`quantize "${trackName}"`);
+    if (blocked) return { content: [{ type: "text", text: blocked }] };
     try {
       const res = await sendCommand("quantizePart", { trackName, startBar, endBar, gridValue, strength });
       if (!res.ok) throw new Error(res.error);

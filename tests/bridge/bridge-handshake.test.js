@@ -37,9 +37,13 @@ test("bridge handshake stays non-ready unless both ping and capabilities succeed
 
   const runtime = getBridgeRuntimeStatus();
   assert.equal(runtime.handshakeOk, false);
+  assert.equal(runtime.lifecyclePhase, "degraded");
   assert.equal(runtime.state, "degraded");
   assert.equal(runtime.capabilities, null);
   assert.equal(runtime.lastError?.code, "HANDSHAKE_FAILED");
+  assert.equal(runtime.proof.handshakeOk, false);
+  assert.equal(runtime.proof.liveReadVerified, false);
+  assert.equal(runtime.proof.runtimeVerified, false);
 });
 
 test("bridge becomes ready only after ping and capability responses both validate", async () => {
@@ -78,9 +82,20 @@ test("bridge becomes ready only after ping and capability responses both validat
 
   const runtime = getBridgeRuntimeStatus();
   assert.equal(runtime.state, "ready");
+  assert.equal(runtime.lifecyclePhase, "handshake_ok");
   assert.equal(runtime.handshakeOk, true);
+  assert.ok(runtime.extensionRespondedAt);
   assert.equal(runtime.capabilities?.transport, true);
   assert.ok(runtime.lastHandshakeAt);
   assert.ok(runtime.lastPingAt);
   assert.equal(runtime.lastError, null);
+  assert.equal(runtime.runtimeReadVerifiedAt, null);
+  assert.equal(runtime.runtimeWriteVerifiedAt, null);
+  // proof state assertions
+  assert.equal(runtime.proof.handshakeOk, true);
+  assert.equal(runtime.proof.liveReadVerified, false);
+  assert.equal(runtime.proof.liveWriteVerified, false);
+  assert.equal(runtime.proof.runtimeVerified, false);
+  assert.equal(runtime.proof.nextRequiredState, "live_read_verified");
+  assert.equal(runtime.proof.packageMode, "bridge_experimental");
 });

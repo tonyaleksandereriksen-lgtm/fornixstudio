@@ -2,14 +2,9 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { sendCommand, isBridgeReady } from "../../services/bridge.js";
+import { sendCommand } from "../../services/bridge.js";
 import { logAction, formatToolResult } from "../../services/logger.js";
-
-function notConnected(action: string) {
-  return {
-    content: [{ type: "text" as const, text: `⚠ Studio One bridge not ready – cannot ${action}.` }],
-  };
-}
+import { requireBridgeWrite } from "./bridge-guard.js";
 
 // Common automation targets in a hardstyle mix
 const COMMON_TARGETS = [
@@ -50,9 +45,8 @@ export function registerAutomationTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   }, async ({ trackName, parameter, points, isAbsolute, curveType }) => {
-    if (!isBridgeReady()) {
-      return notConnected(`add automation to "${trackName}/${parameter}"`);
-    }
+    const blocked = requireBridgeWrite(`add automation to "${trackName}/${parameter}"`);
+    if (blocked) return { content: [{ type: "text", text: blocked }] };
     try {
       const res = await sendCommand("addAutomationPoints", {
         trackName, parameter, points, isAbsolute, curveType,
@@ -91,9 +85,8 @@ export function registerAutomationTools(server: McpServer): void {
     if (endBar <= startBar) {
       return { content: [{ type: "text", text: "✗ endBar must be > startBar" }], isError: true };
     }
-    if (!isBridgeReady()) {
-      return notConnected(`add automation ramp on "${trackName}/${parameter}"`);
-    }
+    const blocked = requireBridgeWrite(`add automation ramp on "${trackName}/${parameter}"`);
+    if (blocked) return { content: [{ type: "text", text: blocked }] };
     try {
       // Generate interpolated points
       const points = Array.from({ length: steps }, (_, i) => {
@@ -135,7 +128,8 @@ export function registerAutomationTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: true },
   }, async ({ trackName, parameter, startBar, endBar }) => {
-    if (!isBridgeReady()) return notConnected("clear automation");
+    const blocked = requireBridgeWrite("clear automation");
+    if (blocked) return { content: [{ type: "text", text: blocked }] };
     try {
       const res = await sendCommand("clearAutomation", { trackName, parameter, startBar, endBar });
       if (!res.ok) throw new Error(res.error);

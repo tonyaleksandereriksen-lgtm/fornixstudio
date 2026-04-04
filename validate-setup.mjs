@@ -189,6 +189,12 @@ async function main() {
     warn("File-based fallback tools will still work");
   }
 
+  section("Bridge lifecycle (MCP-side honesty)");
+  warn(
+    "This validator cannot prove end-to-end Studio One control.",
+    "Socket open ≠ handshake OK ≠ live read/write verified. After starting the MCP server with the bridge enabled, use the dashboard or s1_probe_runtime to inspect proof states: extensionLoaded → listenerCreated → handshakeOk → liveReadVerified → liveWriteVerified → runtimeVerified. Write commands are gated until one live read is verified. Full human checklist: scripts/bridge-runtime-checklist.txt",
+  );
+
   // ── 8. Extension startup markers ─────────────────────────────────────────
   section("Extension Runtime Evidence");
   const homeDir = process.env.USERPROFILE ?? process.env.HOME ?? "";

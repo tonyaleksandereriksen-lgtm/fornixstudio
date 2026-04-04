@@ -57,31 +57,43 @@ function requireBridge(action: string, capabilities: Array<keyof S1BridgeCapabil
   return null;
 }
 
-function runtimeSummary() {
-  const runtime = getBridgeRuntimeStatus();
+function requireBridgeWrite(action: string, capabilities: Array<keyof S1BridgeCapabilities> = []): string | null {
+  const unavailable = requireBridge(action, capabilities);
+  if (unavailable) {
+    return unavailable;
+  }
 
-  return {
-    state: runtime.state,
-    handshakeOk: runtime.handshakeOk,
-    lastHandshakeAt: runtime.lastHandshakeAt,
-    lastPingAt: runtime.lastPingAt,
-    capabilities: runtime.capabilities,
-    lastError: runtime.lastError,
-  };
+  const runtime = getBridgeRuntimeStatus();
+  if (!runtime.proof.liveReadVerified) {
+    return (
+      `⚠ Live Studio One WRITE is still gated — cannot ${action} yet.\n` +
+      `Handshake is complete, but no live read has been verified in this MCP process.\n` +
+      `Run s1_get_transport_state or s1_query_song_metadata first, confirm the values in Studio One, then retry the write.\n` +
+      `Next required state: ${runtime.proof.nextRequiredState ?? "live_read_verified"}.`
+    );
+  }
+
+  return null;
+}
+
+function runtimeSummary() {
+  return getBridgeRuntimeStatus();
 }
 
 export function registerTransportTools(server: McpServer): void {
   server.registerTool("s1_probe_runtime", {
     title: "Probe Studio One Runtime",
-    description: "Return current Studio One bridge connection, handshake, and capability state.",
+    description:
+      "Return bridge connection state, lifecyclePhase (socket vs handshake vs live verified), handshake timestamps, capabilities, and errors. " +
+      "Does not prove Studio One ran without matching extension logs and a successful live read/write in the DAW.",
     inputSchema: {},
     annotations: { readOnlyHint: true, destructiveHint: false },
   }, async () => {
     const runtime = runtimeSummary();
     const summary =
-      runtime.handshakeOk
-        ? "Studio One bridge handshake completed. Runtime state is available below."
-        : "Studio One bridge is not yet verified. Socket connectivity alone does not prove DAW control.";
+      runtime.proof.runtimeVerified
+        ? "Studio One bridge runtime is verified in this MCP process."
+        : `Studio One bridge is not fully runtime-verified yet. Next required state: ${runtime.proof.nextRequiredState ?? "none"}.`;
 
     return { content: [{ type: "text", text: formatToolResult(true, summary, runtime) }] };
   });
@@ -147,7 +159,7 @@ export function registerTransportTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
   }, async ({ bpm }) => {
-    const unavailable = requireBridge(`set tempo to ${bpm} BPM`, ["transport", "song"]);
+    const unavailable = requireBridgeWrite(`set tempo to ${bpm} BPM`, ["transport", "song"]);
     if (unavailable) {
       return { content: [{ type: "text", text: unavailable }] };
     }
@@ -183,7 +195,7 @@ export function registerTransportTools(server: McpServer): void {
       return { content: [{ type: "text", text: "✗ endBar must be greater than startBar" }], isError: true };
     }
 
-    const unavailable = requireBridge(`set loop bars ${startBar}–${endBar}`, ["transport", "song"]);
+    const unavailable = requireBridgeWrite(`set loop bars ${startBar}–${endBar}`, ["transport", "song"]);
     if (unavailable) {
       return { content: [{ type: "text", text: unavailable }] };
     }

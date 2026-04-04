@@ -152,12 +152,17 @@ export function registerFilesystemTools(server: McpServer): void {
       const filtered = files.filter((f) => f.split("/").length <= depth);
       const sorted = filtered.sort();
 
-      const output = sorted.map((f) => {
+      const output = sorted.flatMap((f) => {
         const full = path.join(abs, f);
-        const stat = fs.statSync(full);
-        const icon = stat.isDirectory() ? "📁" : "📄";
-        const size = stat.isFile() ? ` (${stat.size}b)` : "";
-        return `${icon} ${f}${size}`;
+        try {
+          const stat = fs.statSync(full);
+          const icon = stat.isDirectory() ? "📁" : "📄";
+          const size = stat.isFile() ? ` (${stat.size}b)` : "";
+          return [`${icon} ${f}${size}`];
+        } catch {
+          // File was removed between glob enumeration and stat — skip it.
+          return [];
+        }
       });
 
       logAction({ tool: "fs_list_tree", action: "read", target: abs, summary: `Listed ${output.length} entries in ${abs}`, dryRun: false, ok: true });
@@ -233,6 +238,8 @@ export function registerFilesystemTools(server: McpServer): void {
     try {
       const absSrc = guardPath(src);
       const absDest = guardPath(dest);
+      if (isReadOnly(absSrc)) throw new Error(`${absSrc} is in a read-only directory`);
+      if (isReadOnly(absDest)) throw new Error(`${absDest} is in a read-only directory`);
       if (!fs.existsSync(absSrc)) throw new Error(`Source not found: ${absSrc}`);
 
       if (!dry) {

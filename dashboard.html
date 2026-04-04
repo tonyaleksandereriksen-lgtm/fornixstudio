@@ -432,11 +432,18 @@ function formatIso(value) {
 }
 
 function renderHeader() {
+  const phase = status.bridge.lifecyclePhase || status.bridge.connectionState || status.bridge.status;
   const bridge = status.bridge.connectionState || status.bridge.status;
   const pill = document.getElementById('bridge-pill');
 
-  if (bridge === 'ready') {
-    pill.innerHTML = '<div class="dot dot-green"></div> S1 Ready';
+  if (phase === 'runtime_verified') {
+    pill.innerHTML = '<div class="dot dot-green"></div> S1 Runtime verified';
+    pill.className = 'pill pill-green';
+  } else if (phase === 'live_read_verified') {
+    pill.innerHTML = '<div class="dot dot-green"></div> S1 Live read OK';
+    pill.className = 'pill pill-green';
+  } else if (bridge === 'ready' || phase === 'handshake_ok') {
+    pill.innerHTML = '<div class="dot dot-green"></div> S1 Handshake OK';
     pill.className = 'pill pill-green';
   } else if (bridge === 'error') {
     pill.innerHTML = '<div class="dot dot-red"></div> Bridge Error';
@@ -455,9 +462,13 @@ function renderHeader() {
 
 function renderCards() {
   const bridge = status.bridge.connectionState || status.bridge.status;
+  const phase = status.bridge.lifecyclePhase || bridge;
   const handshakeOk = status.bridge.handshakeOk === true;
-  const bridgeClass = bridge === 'ready' ? 'bridge-ok' : 'bridge-off';
-  const bridgeLabel = bridge === 'ready' ? 'Ready' : bridge;
+  const bridgeClass =
+    phase === 'runtime_verified' || bridge === 'ready' || phase === 'handshake_ok'
+      ? 'bridge-ok'
+      : 'bridge-off';
+  const bridgeLabel = phase === 'runtime_verified' ? 'live verified' : bridge === 'ready' ? 'Ready' : phase;
   const capabilityCount = Object.values(status.bridge.capabilities || {}).filter(Boolean).length;
 
   document.getElementById('cards').innerHTML = `
@@ -469,7 +480,7 @@ function renderCards() {
     <div class="card ${bridgeClass}">
       <div class="card-title">Studio One Bridge</div>
       <div class="card-value">${bridgeLabel}</div>
-      <div class="card-sub">${handshakeOk ? 'handshake complete' : 'not verified yet'}</div>
+      <div class="card-sub">${phase}${handshakeOk ? ' · handshake ok' : ' · not verified'}</div>
     </div>
     <div class="card">
       <div class="card-title">Capabilities</div>
@@ -610,11 +621,33 @@ function renderWorkspace() {
         <div class="git-row"><span class="git-key">Enabled</span><span class="git-val">${bridge.enabled ? 'Yes' : 'No'}</span></div>
         <div class="git-row"><span class="git-key">Experimental</span><span class="git-val">${bridge.experimental ? 'Yes' : 'No'}</span></div>
         <div class="git-row"><span class="git-key">State</span><span class="git-val">${bridge.connectionState || bridge.status || '—'}</span></div>
+        <div class="git-row"><span class="git-key">Lifecycle</span><span class="git-val">${bridge.lifecyclePhase || '—'}</span></div>
         <div class="git-row"><span class="git-key">Handshake</span><span class="git-val">${bridge.handshakeOk ? 'Complete' : 'Not verified'}</span></div>
+        <div class="git-row"><span class="git-key">Extension ping OK</span><span class="git-val">${formatIso(bridge.extensionRespondedAt)}</span></div>
         <div class="git-row"><span class="git-key">Last handshake</span><span class="git-val">${formatIso(bridge.lastHandshakeAt)}</span></div>
         <div class="git-row"><span class="git-key">Last ping</span><span class="git-val">${formatIso(bridge.lastPingAt)}</span></div>
+        <div class="git-row"><span class="git-key">Live read verified</span><span class="git-val">${formatIso(bridge.runtimeReadVerifiedAt)}</span></div>
+        <div class="git-row"><span class="git-key">Live write verified</span><span class="git-val">${formatIso(bridge.runtimeWriteVerifiedAt)}</span></div>
         <div class="git-row"><span class="git-key">Capabilities</span><span class="git-val">${Object.entries(caps).filter(([,v]) => v).map(([k]) => k).join(', ') || 'None reported'}</span></div>
         ${bridge.lastError ? `<div class="git-row"><span class="git-key">Last error</span><span class="git-val ok-no">${bridge.lastError.code}: ${bridge.lastError.message}</span></div>` : ''}
+        ${bridge.proof ? `
+        <div class="git-row" style="margin-top:8px"><span class="git-key" style="width:140px;color:var(--text);font-weight:600">Proof states</span><span class="git-val"></span></div>
+        <div class="git-row"><span class="git-key" style="width:140px">Package mode</span><span class="git-val">${bridge.proof.packageMode}</span></div>
+        <div class="git-row"><span class="git-key" style="width:140px">Next required</span><span class="git-val">${bridge.proof.nextRequiredState || 'none (runtime verified)'}</span></div>
+        <div class="git-row"><span class="git-key" style="width:140px">extensionLoaded</span><span class="git-val ${bridge.proof.extensionLoaded?'ok-yes':'ok-no'}">${bridge.proof.extensionLoaded?'✓':'✗'}</span></div>
+        <div class="git-row"><span class="git-key" style="width:140px">listenerCreated</span><span class="git-val ${bridge.proof.listenerCreated?'ok-yes':'ok-no'}">${bridge.proof.listenerCreated?'✓':'✗'}</span></div>
+        <div class="git-row"><span class="git-key" style="width:140px">handshakeOk</span><span class="git-val ${bridge.proof.handshakeOk?'ok-yes':'ok-no'}">${bridge.proof.handshakeOk?'✓':'✗'}</span></div>
+        <div class="git-row"><span class="git-key" style="width:140px">liveReadVerified</span><span class="git-val ${bridge.proof.liveReadVerified?'ok-yes':'ok-no'}">${bridge.proof.liveReadVerified?'✓':'✗'}</span></div>
+        <div class="git-row"><span class="git-key" style="width:140px">liveWriteVerified</span><span class="git-val ${bridge.proof.liveWriteVerified?'ok-yes':'ok-no'}">${bridge.proof.liveWriteVerified?'✓':'✗'}</span></div>
+        <div class="git-row"><span class="git-key" style="width:140px">runtimeVerified</span><span class="git-val ${bridge.proof.runtimeVerified?'ok-yes':'ok-no'}">${bridge.proof.runtimeVerified?'✓':'✗'}</span></div>
+        <div class="git-row"><span class="git-key" style="width:140px">Summary</span><span class="git-val" style="font-size:10px;color:var(--muted)">${bridge.proof.acceptanceSummary}</span></div>
+        ` : ''}
+        ${bridge.extensionEvidence && bridge.extensionEvidence.source !== 'none' ? `
+        <div class="git-row" style="margin-top:8px"><span class="git-key" style="width:140px;color:var(--text);font-weight:600">Extension evidence</span><span class="git-val"></span></div>
+        <div class="git-row"><span class="git-key" style="width:140px">Startup marker</span><span class="git-val ${bridge.extensionEvidence.startupMarkerFound?'ok-yes':'ok-no'}">${bridge.extensionEvidence.startupMarkerFound?'✓ Found':'✗ Not found'}</span></div>
+        <div class="git-row"><span class="git-key" style="width:140px">Last startup</span><span class="git-val">${formatIso(bridge.extensionEvidence.lastStartupAt)}</span></div>
+        <div class="git-row"><span class="git-key" style="width:140px">Filesystem write</span><span class="git-val">${bridge.extensionEvidence.filesystemWriteAvailable === true ? '✓' : bridge.extensionEvidence.filesystemWriteAvailable === false ? '✗' : '—'}</span></div>
+        ` : ''}
       </div>
 
       <div class="git-block" style="margin-top:12px">

@@ -10,6 +10,7 @@ import path from "path";
 import { sendCommand, isBridgeReady } from "../../services/bridge.js";
 import { logAction, formatToolResult } from "../../services/logger.js";
 import { guardPath } from "../../services/workspace.js";
+import { requireBridgeRead, requireBridgeWrite } from "./bridge-guard.js";
 
 // Standard hardstyle/trance arrangement sections
 const HARDSTYLE_SECTIONS = [
@@ -22,12 +23,6 @@ const HARDSTYLE_SECTIONS = [
   { name: "Drop 2",        defaultLength: 32 },
   { name: "Outro",         defaultLength: 16 },
 ] as const;
-
-function notConnected(action: string) {
-  return {
-    content: [{ type: "text" as const, text: `⚠ Studio One bridge not ready – cannot ${action}.` }],
-  };
-}
 
 export function registerArrangementTools(server: McpServer): void {
 
@@ -43,7 +38,8 @@ export function registerArrangementTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: false },
   }, async ({ bar, name, color }) => {
-    if (!isBridgeReady()) return notConnected(`add marker "${name}"`);
+    const blocked = requireBridgeWrite(`add marker "${name}"`);
+    if (blocked) return { content: [{ type: "text", text: blocked }] };
     try {
       const res = await sendCommand("addMarker", { bar, name, color });
       if (!res.ok) throw new Error(res.error);
@@ -63,7 +59,8 @@ export function registerArrangementTools(server: McpServer): void {
     inputSchema: {},
     annotations: { readOnlyHint: true, destructiveHint: false },
   }, async () => {
-    if (!isBridgeReady()) return notConnected("read markers");
+    const blocked = requireBridgeRead("read markers");
+    if (blocked) return { content: [{ type: "text", text: blocked }] };
     try {
       const res = await sendCommand("getMarkers");
       if (!res.ok) throw new Error(res.error);
@@ -87,7 +84,8 @@ export function registerArrangementTools(server: McpServer): void {
     if (!name && !bar) {
       return { content: [{ type: "text", text: "✗ Provide name or bar" }], isError: true };
     }
-    if (!isBridgeReady()) return notConnected("delete marker");
+    const blocked = requireBridgeWrite("delete marker");
+    if (blocked) return { content: [{ type: "text", text: blocked }] };
     try {
       const res = await sendCommand("deleteMarker", { name, bar });
       if (!res.ok) throw new Error(res.error);
@@ -160,7 +158,7 @@ export function registerArrangementTools(server: McpServer): void {
     };
 
     if (!isBridgeReady()) {
-      // Fallback: describe the arrangement as text
+      // Fallback: describe the arrangement as text so the user can apply it manually.
       let bar = startBar;
       const lines = sections.map(s => {
         const line = `Bar ${String(bar).padStart(3, " ")}: ${s.name} (${s.bars} bars)`;
@@ -174,6 +172,10 @@ export function registerArrangementTools(server: McpServer): void {
         }],
       };
     }
+
+    // Bridge is connected; enforce write gate before sending markers.
+    const writeBlocked = requireBridgeWrite("build arrangement");
+    if (writeBlocked) return { content: [{ type: "text", text: writeBlocked }] };
 
     try {
       const markerCalls: Array<{ bar: number; name: string; color: string }> = [];

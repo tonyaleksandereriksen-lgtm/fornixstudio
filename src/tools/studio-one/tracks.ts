@@ -2,17 +2,9 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { sendCommand, isBridgeReady } from "../../services/bridge.js";
+import { sendCommand } from "../../services/bridge.js";
 import { logAction, formatToolResult } from "../../services/logger.js";
-
-function notConnected(action: string): { content: { type: "text"; text: string }[] } {
-  return {
-    content: [{
-      type: "text",
-      text: `⚠ Studio One bridge not ready – cannot ${action}.\nUse s1_export_instruction for a file-based fallback.`,
-    }],
-  };
-}
+import { requireBridgeWrite } from "./bridge-guard.js";
 
 export function registerTrackTools(server: McpServer): void {
 
@@ -31,7 +23,8 @@ export function registerTrackTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   }, async ({ name, type, color, insertAtPosition }) => {
-    if (!isBridgeReady()) return notConnected(`create track "${name}"`);
+    const blocked = requireBridgeWrite(`create track "${name}"`);
+    if (blocked) return { content: [{ type: "text", text: blocked }] };
     try {
       const res = await sendCommand("createTrack", { name, type, color, insertAtPosition });
       if (!res.ok) throw new Error(res.error);
@@ -58,7 +51,8 @@ export function registerTrackTools(server: McpServer): void {
     if (!trackId && !currentName) {
       return { content: [{ type: "text", text: "✗ Provide trackId or currentName" }], isError: true };
     }
-    if (!isBridgeReady()) return notConnected(`rename track to "${newName}"`);
+    const blocked = requireBridgeWrite(`rename track to "${newName}"`);
+    if (blocked) return { content: [{ type: "text", text: blocked }] };
     try {
       const res = await sendCommand("renameTrack", { trackId, currentName, newName });
       if (!res.ok) throw new Error(res.error);
@@ -85,7 +79,8 @@ export function registerTrackTools(server: McpServer): void {
     if (!trackId && !trackName) {
       return { content: [{ type: "text", text: "✗ Provide trackId or trackName" }], isError: true };
     }
-    if (!isBridgeReady()) return notConnected(`${muted ? "mute" : "unmute"} track`);
+    const blocked = requireBridgeWrite(`${muted ? "mute" : "unmute"} track`);
+    if (blocked) return { content: [{ type: "text", text: blocked }] };
     try {
       const res = await sendCommand("setTrackMute", { trackId, trackName, muted });
       if (!res.ok) throw new Error(res.error);
@@ -113,7 +108,8 @@ export function registerTrackTools(server: McpServer): void {
     if (!trackId && !trackName) {
       return { content: [{ type: "text", text: "✗ Provide trackId or trackName" }], isError: true };
     }
-    if (!isBridgeReady()) return notConnected(`${soloed ? "solo" : "unsolo"} track`);
+    const blocked = requireBridgeWrite(`${soloed ? "solo" : "unsolo"} track`);
+    if (blocked) return { content: [{ type: "text", text: blocked }] };
     try {
       const res = await sendCommand("setTrackSolo", { trackId, trackName, soloed });
       if (!res.ok) throw new Error(res.error);
@@ -141,7 +137,8 @@ export function registerTrackTools(server: McpServer): void {
     if (!trackId && !trackName) {
       return { content: [{ type: "text", text: "✗ Provide trackId or trackName" }], isError: true };
     }
-    if (!isBridgeReady()) return notConnected("set volume");
+    const blocked = requireBridgeWrite("set volume");
+    if (blocked) return { content: [{ type: "text", text: blocked }] };
     try {
       const res = await sendCommand("setTrackVolume", { trackId, trackName, volumeDb });
       if (!res.ok) throw new Error(res.error);
@@ -167,7 +164,8 @@ export function registerTrackTools(server: McpServer): void {
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   }, async ({ fromTrackName, toBusName, sendLevelDb, preFader }) => {
-    if (!isBridgeReady()) return notConnected(`create send "${fromTrackName}" → "${toBusName}"`);
+    const blocked = requireBridgeWrite(`create send "${fromTrackName}" → "${toBusName}"`);
+    if (blocked) return { content: [{ type: "text", text: blocked }] };
     try {
       const res = await sendCommand("createSend", { fromTrackName, toBusName, sendLevelDb, preFader });
       if (!res.ok) throw new Error(res.error);

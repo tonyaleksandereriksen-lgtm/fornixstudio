@@ -12,7 +12,7 @@ import path from "path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { logAction, formatToolResult } from "../../services/logger.js";
-import { guardPath } from "../../services/workspace.js";
+import { guardPath, isReadOnly } from "../../services/workspace.js";
 
 export function registerFallbackTools(server: McpServer): void {
 
@@ -35,6 +35,7 @@ export function registerFallbackTools(server: McpServer): void {
   }, async ({ outputDir, instructions, label }) => {
     try {
       const abs = guardPath(outputDir);
+      if (isReadOnly(abs)) throw new Error(`${abs} is in a read-only directory`);
       fs.mkdirSync(abs, { recursive: true });
 
       const filename = `s1-instructions-${label}-${Date.now()}.json`;
