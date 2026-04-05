@@ -12,6 +12,8 @@ import {
   type WorkspaceStyleDefaults,
   addTrackToWorkspace,
   createWorkspace,
+  createWorkspaceFromTemplate,
+  generateWorkspacePackages,
   getWorkspaceSummary,
 } from "../services/workspace-profile.js";
 
@@ -223,6 +225,100 @@ export function registerWorkspaceProfileTools(server: McpServer): void {
     } catch (e) {
       const err = String(e);
       logAction({ tool: "fornix_add_track_to_workspace", action: "write", summary: err, dryRun: false, ok: false, error: err });
+      return { content: [{ type: "text" as const, text: `✗ ${err}` }], isError: true };
+    }
+  });
+
+  // ── fornix_generate_workspace_packages ─────────────────────────────────────
+  server.registerTool("fornix_generate_workspace_packages", {
+    title: "Generate Workspace Packages",
+    description:
+      "Generate production packages for all tracks in a workspace. Each track's package inherits workspace defaults " +
+      "with per-track overrides applied. Tracks already generated are skipped unless regenerate is true.",
+    inputSchema: {
+      outputDir: z.string().describe("Directory containing workspace.json"),
+      regenerate: z.boolean().default(false).describe("Re-generate packages for tracks that already have one"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  }, async (rawInput) => {
+    try {
+      const resolvedDir = guardPath(rawInput.outputDir);
+      const result = generateWorkspacePackages(resolvedDir, { regenerate: rawInput.regenerate });
+
+      const summary =
+        `Generated ${result.generated.length} packages for workspace "${result.workspaceName}"` +
+        (result.alreadyGenerated.length > 0 ? ` (${result.alreadyGenerated.length} already generated)` : "") +
+        (result.skipped.length > 0 ? ` (${result.skipped.length} skipped)` : "");
+
+      logAction({ tool: "fornix_generate_workspace_packages", action: "write", target: resolvedDir, summary, dryRun: false, ok: true });
+
+      return {
+        content: [{
+          type: "text" as const,
+          text: formatToolResult(true, summary, {
+            workspaceName: result.workspaceName,
+            generated: result.generated,
+            alreadyGenerated: result.alreadyGenerated,
+            skipped: result.skipped,
+          }),
+        }],
+      };
+    } catch (e) {
+      const err = String(e);
+      logAction({ tool: "fornix_generate_workspace_packages", action: "write", summary: err, dryRun: false, ok: false, error: err });
+      return { content: [{ type: "text" as const, text: `✗ ${err}` }], isError: true };
+    }
+  });
+
+  // ── fornix_create_workspace_from_template ──────────────────────────────────
+  server.registerTool("fornix_create_workspace_from_template", {
+    title: "Create Workspace from Template",
+    description:
+      "Create a new workspace pre-populated with style defaults from a production template. " +
+      "Use fornix_list_templates to see available template IDs.",
+    inputSchema: {
+      outputDir: z.string().describe("Base output directory for the workspace"),
+      name: z.string().min(1).describe("Workspace / EP / album name"),
+      templateId: z.string().min(1).describe("Template ID (e.g. 'rawphoric-banger', 'cinematic-euphoric-epic')"),
+      artistName: z.string().default("Fornix").describe("Artist name"),
+      bpmRange: bpmRangeSchema.optional().describe("Optional BPM range constraint"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  }, async (rawInput) => {
+    try {
+      const resolvedDir = guardPath(rawInput.outputDir);
+
+      const workspace = createWorkspaceFromTemplate({
+        outputDir: resolvedDir,
+        name: rawInput.name,
+        templateId: rawInput.templateId,
+        artistName: rawInput.artistName,
+        bpmRange: rawInput.bpmRange,
+      });
+
+      const defaultCount = Object.keys(workspace.defaults).filter(
+        (k) => (workspace.defaults as Record<string, unknown>)[k] !== undefined,
+      ).length;
+
+      const summary = `Workspace "${workspace.name}" created from template "${rawInput.templateId}"`;
+      logAction({ tool: "fornix_create_workspace_from_template", action: "write", target: resolvedDir, summary, dryRun: false, ok: true });
+
+      return {
+        content: [{
+          type: "text" as const,
+          text: formatToolResult(true, summary, {
+            name: workspace.name,
+            templateId: rawInput.templateId,
+            artistName: workspace.artistName,
+            bpmRange: workspace.bpmRange ?? null,
+            defaultsSet: defaultCount,
+            path: `${resolvedDir}/workspace.json`,
+          }),
+        }],
+      };
+    } catch (e) {
+      const err = String(e);
+      logAction({ tool: "fornix_create_workspace_from_template", action: "write", summary: err, dryRun: false, ok: false, error: err });
       return { content: [{ type: "text" as const, text: `✗ ${err}` }], isError: true };
     }
   });
