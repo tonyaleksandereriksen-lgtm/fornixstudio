@@ -12,6 +12,7 @@ import { getBridgeRuntimeStatus, getBridgeStatus } from "./bridge.js";
 import { readRecentLogs } from "./logger.js";
 import { getStatus as getGitStatus } from "./checkpoint.js";
 import { getConfig } from "./workspace.js";
+import { getWatcherStatus } from "./song-watcher.js";
 import { SERVER_VERSION } from "../constants.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -129,6 +130,12 @@ export const TOOL_MANIFEST = [
   { name: "session_apply_mix_preset",    family: "Session",        readOnly: false },
   { name: "session_health_check",        family: "Session",        readOnly: true  },
   { name: "session_list_mix_presets",    family: "Session",        readOnly: true  },
+
+  // Song Watcher
+  { name: "s1_watch_session",            family: "Song Watcher",   readOnly: true  },
+  { name: "s1_session_snapshot",         family: "Song Watcher",   readOnly: true  },
+  { name: "s1_session_diff",             family: "Song Watcher",   readOnly: true  },
+  { name: "s1_stop_watching",            family: "Song Watcher",   readOnly: false },
 ] as const;
 
 export function incrementToolCall(): void {
@@ -207,6 +214,7 @@ export function startStatusServer(): void {
             dryRunByDefault: cfg.dryRunByDefault ?? false,
           },
           git: gitStatus,
+          songWatcher: getWatcherStatus(),
           stats: {
             toolCallsThisSession: _toolCallCount,
             registeredTools: TOOL_MANIFEST.length,

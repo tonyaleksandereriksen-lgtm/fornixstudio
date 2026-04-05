@@ -34,12 +34,14 @@ src/index.ts   (McpServer, StdioServerTransport)
   ├── src/services/status-server.ts  HTTP server port 7891 (dashboard + /api/status)
   ├── src/services/workspace-profile.ts  workspace.json schema, inheritance resolver
   ├── src/services/template-library.ts   pre-built hardstyle production templates
+  ├── src/services/song-watcher.ts       chokidar file watcher + .song diff engine
   └── src/tools/
         filesystem.ts        fs_* tools (guarded by workspace.ts)
         git.ts               git_* tools
         project.ts           project_* tools (build, test, lint, typecheck)
         sound-design.ts      sd_* tools
         session.ts           session_* tools
+        song-watcher.ts      s1_watch_session, s1_session_snapshot, s1_session_diff, s1_stop_watching
         workspace-profile.ts fornix_create/get/add workspace + pipeline + consistency tools
         production-package.ts + production-package-planning.ts (includes batch regen + template tools)
         studio-one/
@@ -47,7 +49,7 @@ src/index.ts   (McpServer, StdioServerTransport)
           tracks.ts          s1_create_track, s1_rename_track …
           plugins.ts         s1_add_plugin, s1_set_plugin_param …
           midi.ts            s1_add_midi_notes, s1_add_chord …
-          arrangement.ts     s1_add_marker, s1_build_arrangement …
+          arrangement.ts     s1_add_marker, s1_build_arrangement ��
           automation.ts      s1_add_automation_point …
           fallback.ts        s1_export_instruction, s1_generate_track_plan …
 ```
@@ -118,6 +120,19 @@ When `writeProductionPackage` runs inside a directory with a workspace.json, it 
 Analysis output includes: section map with bar ranges and flags, energy arc assessment (intro → build → peak → resolution), specific problems with bar references, and concrete actions with bar targets. Hardstyle-specific checks: missing drops, short drops (<32 bars), missing build-ups before drops.
 
 Files: `src/services/song-file.ts` (probe), `src/services/arrangement.ts` (analysis), `src/tools/arrangement.ts` (MCP tool).
+
+## Song watcher (session listener)
+
+`src/services/song-watcher.ts` uses chokidar to watch a Studio One project directory for `.song` file changes. When the user saves in S1, the watcher re-parses the file and diffs against the previous snapshot. This provides "listening" capability — the MCP server stays aware of the session state without the user switching apps.
+
+- `s1_watch_session` — start watching a directory or .song file path; does an initial parse immediately
+- `s1_session_snapshot` — get the latest parsed state (tempo, tracks, markers, arrangement analysis); no file path needed
+- `s1_session_diff` — show what changed between the two most recent saves (tracks added/removed, tempo changes, marker moves)
+- `s1_stop_watching` — stop the watcher and clear cache
+
+The watcher debounces file changes (1.5s) and uses `awaitWriteFinish` to handle S1's multi-pass saves. Watcher status is exposed at `/api/status` in the dashboard.
+
+**Note:** The watcher reads `.song` files — S1 may lock the file while saving. The parser silently retries on the next change event. For best results, ensure `allowedDirs` in `fornix-mcp.config.json` includes the S1 Songs directory.
 
 ## Key constraints
 
