@@ -84,7 +84,23 @@ export function guardPath(inputPath: string): string {
 
   const resolved = resolveWorkspacePath(inputPath);
 
-  const allowed = _config.allowedDirs.some((dir) => isPathInside(resolved, dir));
+  // Resolve symlinks to prevent escaping allowedDirs via symlink targets.
+  // Use the resolved path for the check, but only if it exists — for new
+  // files we check the parent directory instead.
+  let realTarget = resolved;
+  try {
+    realTarget = fs.realpathSync(resolved);
+  } catch {
+    // File doesn't exist yet — resolve the parent to catch symlinked dirs
+    const parent = path.dirname(resolved);
+    try {
+      realTarget = path.join(fs.realpathSync(parent), path.basename(resolved));
+    } catch {
+      // Parent doesn't exist either — fall through with the string-resolved path
+    }
+  }
+
+  const allowed = _config.allowedDirs.some((dir) => isPathInside(realTarget, dir));
   if (!allowed) {
     throw new Error(
       `Path "${resolved}" is outside the allowed workspace.\n` +

@@ -10,6 +10,11 @@
 import fs from "fs";
 import zlib from "zlib";
 
+// Max file size for .song files (500 MB) — prevents OOM on huge/corrupted files
+const MAX_SONG_FILE_SIZE = 500 * 1024 * 1024;
+// Max decompressed entry size (100 MB) — prevents zip bomb decompression attacks
+const MAX_INFLATE_SIZE = 100 * 1024 * 1024;
+
 // ─── Types ───────────���─────────────────────────────────���────────────────────────
 
 export interface Marker {
@@ -109,6 +114,9 @@ function findZipEntriesViaCentralDir(buf: Buffer): ZipEntry[] {
     const commentLen = buf.readUInt16LE(pos + 32);
     const localHeaderOffset = buf.readUInt32LE(pos + 42);
 
+    // Bounds check: ensure variable-length fields don't overrun the buffer
+    if (pos + 46 + filenameLen + extraLen + commentLen > buf.length) break;
+
     const filename = buf.subarray(pos + 46, pos + 46 + filenameLen).toString("utf8");
 
     // Now locate data in the local file header
@@ -172,8 +180,8 @@ function inflateEntry(entry: ZipEntry): string | null {
       return entry.compressedData.toString("utf8");
     }
     if (entry.compressionMethod === 8) {
-      // Deflate
-      return zlib.inflateRawSync(entry.compressedData).toString("utf8");
+      // Deflate — cap output to prevent zip bomb decompression
+      return zlib.inflateRawSync(entry.compressedData, { maxOutputLength: MAX_INFLATE_SIZE }).toString("utf8");
     }
     return null;
   } catch {
@@ -432,6 +440,20 @@ function scanBinaryForStrings(buf: Buffer): string {
 // ─── Public API ───���──────────────────────────���─────────────────────────────────��
 
 export function tryParseSongFile(filePath: string): SongFileResult {
+  const stat = fs.statSync(filePath);
+  if (stat.size > MAX_SONG_FILE_SIZE) {
+    return {
+      format: "unknown",
+      raw: "",
+      markers: [],
+      tracks: [],
+      tempo: null,
+      timeSignature: null,
+      regions: [],
+      parseNotes: [`File too large (${Math.round(stat.size / 1024 / 1024)} MB). Max: ${MAX_SONG_FILE_SIZE / 1024 / 1024} MB.`],
+    };
+  }
+
   const buf = fs.readFileSync(filePath);
   const notes: string[] = [];
 

@@ -33,7 +33,7 @@ export function registerGitTools(server: McpServer): void {
         s.untracked.length ? `Untracked:\n${s.untracked.map(f => `  ? ${f}`).join("\n")}` : "",
       ].filter(Boolean).join("\n");
 
-      return { content: [{ type: "text", text: lines }] };
+      return { content: [{ type: "text", text: truncate(lines) }] };
     } catch (e) {
       return { content: [{ type: "text", text: `✗ ${e}` }], isError: true };
     }
