@@ -11,6 +11,7 @@ import { logAction, formatToolResult } from "../services/logger.js";
 import {
   type WorkspaceStyleDefaults,
   addTrackToWorkspace,
+  checkWorkspaceConsistency,
   createWorkspace,
   createWorkspaceFromTemplate,
   generateWorkspacePackages,
@@ -319,6 +320,57 @@ export function registerWorkspaceProfileTools(server: McpServer): void {
     } catch (e) {
       const err = String(e);
       logAction({ tool: "fornix_create_workspace_from_template", action: "write", summary: err, dryRun: false, ok: false, error: err });
+      return { content: [{ type: "text" as const, text: `✗ ${err}` }], isError: true };
+    }
+  });
+
+  // ── fornix_check_workspace_consistency ──────────────────────────────────────
+  server.registerTool("fornix_check_workspace_consistency", {
+    title: "Check Workspace Consistency",
+    description:
+      "Compare generated packages against workspace defaults and track overrides. " +
+      "Reports drift between what the workspace expects and what each package actually contains.",
+    inputSchema: {
+      outputDir: z.string().describe("Directory containing workspace.json"),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+  }, async (rawInput) => {
+    try {
+      const resolvedDir = guardPath(rawInput.outputDir);
+      const result = checkWorkspaceConsistency(resolvedDir);
+
+      const lines: string[] = [
+        `Workspace: ${result.workspaceName}`,
+        `Tracks checked: ${result.tracksChecked}`,
+        `With packages: ${result.tracksWithPackage}`,
+      ];
+
+      if (result.tracksMissingPackage.length > 0) {
+        lines.push(`Missing packages: ${result.tracksMissingPackage.join(", ")}`);
+      }
+
+      if (result.issues.length > 0) {
+        lines.push("");
+        lines.push("Issues:");
+        for (const issue of result.issues) {
+          const icon = issue.severity === "error" ? "[ERROR]" : "[WARN]";
+          lines.push(`  ${icon} ${issue.trackName}: ${issue.field} — expected ${JSON.stringify(issue.expected)}, got ${JSON.stringify(issue.actual)}`);
+        }
+      }
+
+      const status = result.consistent ? "consistent" : `${result.issues.length} issues found`;
+      const summary = `Workspace "${result.workspaceName}" — ${status}`;
+      logAction({ tool: "fornix_check_workspace_consistency", action: "read", target: resolvedDir, summary, dryRun: false, ok: true });
+
+      return {
+        content: [{
+          type: "text" as const,
+          text: formatToolResult(true, summary, lines.join("\n")),
+        }],
+      };
+    } catch (e) {
+      const err = String(e);
+      logAction({ tool: "fornix_check_workspace_consistency", action: "read", summary: err, dryRun: false, ok: false, error: err });
       return { content: [{ type: "text" as const, text: `✗ ${err}` }], isError: true };
     }
   });
