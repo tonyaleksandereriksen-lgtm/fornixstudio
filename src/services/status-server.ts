@@ -116,6 +116,7 @@ export const TOOL_MANIFEST = [
   { name: "fornix_add_track_to_workspace",    family: "Workspace",          readOnly: false },
   { name: "fornix_generate_workspace_packages", family: "Workspace",       readOnly: false },
   { name: "fornix_create_workspace_from_template", family: "Workspace",    readOnly: false },
+  { name: "fornix_check_workspace_consistency",    family: "Workspace",    readOnly: true  },
 
   // Session
   { name: "session_kickstart",           family: "Session",        readOnly: false },

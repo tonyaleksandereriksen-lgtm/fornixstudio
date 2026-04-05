@@ -11,8 +11,11 @@ import {
   type EnergyProfile,
   type LeadStyle,
   type ProductionPackageInput,
+  type ProductionPackageMetadata,
   type ProductionPackageResult,
   type StyleVariant,
+  FORNIX_OUTPUT_ROOT,
+  getPackageSummary,
   slugifyTrackName,
   writeProductionPackage,
 } from "./production-package.js";
@@ -270,6 +273,100 @@ export function getWorkspaceSummary(outputDir: string): WorkspaceSummary {
       packageGenerated: t.packageGenerated,
       overrideCount: t.overrides ? Object.keys(t.overrides).length : 0,
     })),
+  };
+}
+
+// ─── Consistency check ──────────────────────────────────────────────────────────
+
+export interface ConsistencyIssue {
+  trackSlug: string;
+  trackName: string;
+  field: string;
+  expected: unknown;
+  actual: unknown;
+  severity: "warning" | "error";
+}
+
+export interface WorkspaceConsistencyResult {
+  workspaceName: string;
+  consistent: boolean;
+  issues: ConsistencyIssue[];
+  tracksChecked: number;
+  tracksWithPackage: number;
+  tracksMissingPackage: string[];
+}
+
+const CHECKED_FIELDS = [
+  "styleVariant", "leadStyle", "dropStrategy", "energyProfile",
+  "keySignature", "targetBars", "substyle", "kickStyle",
+  "antiClimaxStyle", "arrangementFocus", "vocalMode",
+  "djUtilityPriority", "cinematicIntensity", "aggressionLevel",
+  "emotionalTone", "mood", "focus",
+] as const;
+
+export function checkWorkspaceConsistency(outputDir: string): WorkspaceConsistencyResult {
+  const workspace = readWorkspace(outputDir);
+  const issues: ConsistencyIssue[] = [];
+  const tracksMissingPackage: string[] = [];
+  let tracksWithPackage = 0;
+
+  for (const track of workspace.tracks) {
+    const packageRoot = path.join(outputDir, FORNIX_OUTPUT_ROOT, track.trackSlug);
+
+    let summary;
+    try {
+      summary = getPackageSummary({ packagePath: packageRoot });
+    } catch {
+      tracksMissingPackage.push(track.trackSlug);
+      continue;
+    }
+
+    if (!summary.metadata) {
+      tracksMissingPackage.push(track.trackSlug);
+      continue;
+    }
+
+    tracksWithPackage++;
+    const meta = summary.metadata;
+    const expected = resolveTrackInput(workspace, track);
+
+    // Check tempo
+    if (meta.tempo !== track.tempo) {
+      issues.push({
+        trackSlug: track.trackSlug,
+        trackName: track.trackName,
+        field: "tempo",
+        expected: track.tempo,
+        actual: meta.tempo,
+        severity: "error",
+      });
+    }
+
+    // Check inheritable fields
+    for (const field of CHECKED_FIELDS) {
+      const expectedVal = expected[field];
+      const actualVal = meta[field as keyof ProductionPackageMetadata];
+
+      if (expectedVal !== undefined && actualVal !== undefined && expectedVal !== actualVal) {
+        issues.push({
+          trackSlug: track.trackSlug,
+          trackName: track.trackName,
+          field,
+          expected: expectedVal,
+          actual: actualVal,
+          severity: "warning",
+        });
+      }
+    }
+  }
+
+  return {
+    workspaceName: workspace.name,
+    consistent: issues.length === 0 && tracksMissingPackage.length === 0,
+    issues,
+    tracksChecked: workspace.tracks.length,
+    tracksWithPackage,
+    tracksMissingPackage,
   };
 }
 
