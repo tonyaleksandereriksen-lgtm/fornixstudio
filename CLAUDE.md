@@ -32,13 +32,16 @@ src/index.ts   (McpServer, StdioServerTransport)
   ├── src/services/checkpoint.ts     git checkpoints (simple-git)
   ├── src/services/bridge.ts         WebSocket bridge to Studio One (experimental)
   ├── src/services/status-server.ts  HTTP server port 7891 (dashboard + /api/status)
+  ├── src/services/workspace-profile.ts  workspace.json schema, inheritance resolver
+  ├── src/services/template-library.ts   pre-built hardstyle production templates
   └── src/tools/
         filesystem.ts        fs_* tools (guarded by workspace.ts)
         git.ts               git_* tools
         project.ts           project_* tools (build, test, lint, typecheck)
         sound-design.ts      sd_* tools
         session.ts           session_* tools
-        production-package.ts + production-package-planning.ts
+        workspace-profile.ts fornix_create_workspace, fornix_get_workspace_summary, fornix_add_track_to_workspace
+        production-package.ts + production-package-planning.ts (includes batch regen + template tools)
         studio-one/
           transport.ts       s1_get_transport_state, s1_set_tempo, s1_probe_runtime …
           tracks.ts          s1_create_track, s1_rename_track …
@@ -83,9 +86,25 @@ Use `s1_probe_runtime` (MCP tool) or `GET /api/status` to inspect the current st
 
 Install path (Windows): `%APPDATA%\PreSonus\Studio One 7\Extensions\FornixMCPBridge\`
 
+## Workspace profile system
+
+`workspace.json` sits at the output directory root and defines an EP/album-level workspace with shared style defaults and an optional BPM range. Tracks added to the workspace inherit these defaults unless overridden per-track. Inheritance chain: **track override → workspace default → hardcoded fallback → resolveProfile fills the rest**.
+
+- `fornix_create_workspace` — creates workspace.json with shared defaults
+- `fornix_get_workspace_summary` — reads track list, generation status, override counts
+- `fornix_add_track_to_workspace` — adds a track with tempo validation against BPM range
+
+When `writeProductionPackage` runs inside a directory with a workspace.json, it records `workspaceRef` in the package metadata for provenance.
+
 ## Production package system
 
 `fornix_generate_production_package` generates a file-first structured package under `<workspace>/Fornix/<track-slug>/` with seven document families (Metadata, Project Plan, Routing, Automation, Mix, Sound Design, Checklists). Entirely independent of the Studio One bridge. Selective regeneration and preview/planning tools operate on existing packages without full rewrites.
+
+`fornix_batch_regenerate_package` applies an entire update plan in one call — regenerates multiple (or all) sections with a single metadata write. Accepts an explicit section list or auto-regenerates all recommended sections from the update plan.
+
+## Template library
+
+5 pre-built hardstyle production templates accessible via `fornix_list_templates` (with optional category filter) and `fornix_get_template`. Categories: euphoric, raw, cinematic, festival, hybrid. Each template provides a complete set of style defaults, creative brief, mix concerns, and reference notes ready to populate workspace defaults or individual track profiles.
 
 ## Key constraints
 

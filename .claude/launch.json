@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "MCP Server",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["start"],
+      "port": 7891
+    },
+    {
+      "name": "TypeScript Watch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 0
+    },
+    {
+      "name": "Validate Setup",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["validate-setup.mjs"],
+      "port": 0
+    }
+  ]
+}

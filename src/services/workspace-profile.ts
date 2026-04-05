@@ -1,0 +1,311 @@
+
+// ─── Fornix Studio MCP – Workspace Profile Service ────────────────────────────
+//
+// Multi-track workspace layer: workspace.json schema, read/write helpers,
+// and profile inheritance resolver (workspace defaults → track overrides).
+
+import fs from "fs";
+import path from "path";
+import {
+  type DropStrategy,
+  type EnergyProfile,
+  type LeadStyle,
+  type ProductionPackageInput,
+  type StyleVariant,
+  slugifyTrackName,
+} from "./production-package.js";
+
+// ─── Types ──────────────────────────────────────────────────────────────────────
+
+export const WORKSPACE_FORMAT_VERSION = "1.0.0";
+export const WORKSPACE_FILENAME = "workspace.json";
+
+export interface BpmRange {
+  min: number;
+  max: number;
+}
+
+/** Inheritable style fields — workspace defaults and per-track overrides share this shape. */
+export interface WorkspaceStyleDefaults {
+  styleVariant?: StyleVariant;
+  leadStyle?: LeadStyle;
+  dropStrategy?: DropStrategy;
+  energyProfile?: EnergyProfile;
+  keySignature?: string;
+  targetBars?: number;
+  substyle?: string;
+  kickStyle?: string;
+  antiClimaxStyle?: string;
+  arrangementFocus?: string;
+  vocalMode?: string;
+  djUtilityPriority?: string;
+  cinematicIntensity?: string;
+  aggressionLevel?: string;
+  emotionalTone?: string;
+  mood?: string;
+  focus?: string;
+  mixConcerns?: string[];
+  referenceNotes?: string[];
+  sectionGoals?: Record<string, string>;
+}
+
+export interface WorkspaceTrackEntry {
+  trackName: string;
+  trackSlug: string;
+  tempo: number;
+  creativeBrief?: string;
+  signatureHooks?: string[];
+  overrides?: Partial<WorkspaceStyleDefaults>;
+  packageGenerated: boolean;
+  addedAt: string;
+}
+
+export interface WorkspaceProfile {
+  workspaceFormatVersion: string;
+  name: string;
+  artistName: string;
+  bpmRange?: BpmRange;
+  defaults: WorkspaceStyleDefaults;
+  tracks: WorkspaceTrackEntry[];
+  createdAt: string;
+  lastModifiedAt: string;
+}
+
+// ─── Read / Write ───────────────────────────────────────────────────────────────
+
+export function workspacePath(outputDir: string): string {
+  return path.join(outputDir, WORKSPACE_FILENAME);
+}
+
+export function workspaceExists(outputDir: string): boolean {
+  return fs.existsSync(workspacePath(outputDir));
+}
+
+export function readWorkspace(outputDir: string): WorkspaceProfile {
+  const filePath = workspacePath(outputDir);
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`No workspace.json found at ${filePath}`);
+  }
+  return JSON.parse(fs.readFileSync(filePath, "utf8")) as WorkspaceProfile;
+}
+
+export function writeWorkspace(outputDir: string, workspace: WorkspaceProfile): void {
+  workspace.lastModifiedAt = new Date().toISOString();
+  fs.mkdirSync(outputDir, { recursive: true });
+  fs.writeFileSync(workspacePath(outputDir), JSON.stringify(workspace, null, 2), "utf8");
+}
+
+// ─── Factory ────────────────────────────────────────────────────────────────────
+
+export interface CreateWorkspaceInput {
+  outputDir: string;
+  name: string;
+  artistName?: string;
+  bpmRange?: BpmRange;
+  defaults?: WorkspaceStyleDefaults;
+}
+
+export function createWorkspace(input: CreateWorkspaceInput): WorkspaceProfile {
+  if (workspaceExists(input.outputDir)) {
+    throw new Error(`workspace.json already exists at ${workspacePath(input.outputDir)}`);
+  }
+
+  if (input.bpmRange) {
+    validateBpmRange(input.bpmRange);
+  }
+
+  const now = new Date().toISOString();
+  const workspace: WorkspaceProfile = {
+    workspaceFormatVersion: WORKSPACE_FORMAT_VERSION,
+    name: input.name,
+    artistName: input.artistName ?? "Fornix",
+    bpmRange: input.bpmRange,
+    defaults: input.defaults ?? {},
+    tracks: [],
+    createdAt: now,
+    lastModifiedAt: now,
+  };
+
+  writeWorkspace(input.outputDir, workspace);
+  return workspace;
+}
+
+// ─── Track management ───────────────────────────────────────────────────────────
+
+export interface AddTrackInput {
+  outputDir: string;
+  trackName: string;
+  tempo: number;
+  creativeBrief?: string;
+  signatureHooks?: string[];
+  overrides?: Partial<WorkspaceStyleDefaults>;
+}
+
+export function addTrackToWorkspace(input: AddTrackInput): { workspace: WorkspaceProfile; track: WorkspaceTrackEntry } {
+  const workspace = readWorkspace(input.outputDir);
+  const slug = slugifyTrackName(input.trackName);
+
+  if (workspace.tracks.some((t) => t.trackSlug === slug)) {
+    throw new Error(`Track "${input.trackName}" (slug: ${slug}) already exists in workspace`);
+  }
+
+  if (workspace.bpmRange) {
+    validateTempoInRange(input.tempo, workspace.bpmRange);
+  }
+
+  const track: WorkspaceTrackEntry = {
+    trackName: input.trackName,
+    trackSlug: slug,
+    tempo: input.tempo,
+    creativeBrief: input.creativeBrief,
+    signatureHooks: input.signatureHooks,
+    overrides: input.overrides,
+    packageGenerated: false,
+    addedAt: new Date().toISOString(),
+  };
+
+  workspace.tracks.push(track);
+  writeWorkspace(input.outputDir, workspace);
+
+  return { workspace, track };
+}
+
+/** Mark a track as having a generated package. */
+export function markTrackGenerated(outputDir: string, trackSlug: string): void {
+  const workspace = readWorkspace(outputDir);
+  const track = workspace.tracks.find((t) => t.trackSlug === trackSlug);
+  if (track) {
+    track.packageGenerated = true;
+    writeWorkspace(outputDir, workspace);
+  }
+}
+
+// ─── Inheritance resolver ───────────────────────────────────────────────────────
+
+/**
+ * Resolve a track's effective ProductionPackageInput by merging:
+ *   track explicit value → track overrides → workspace defaults → (resolveProfile fills the rest)
+ *
+ * The returned object is ready to pass directly to writeProductionPackage().
+ */
+export function resolveTrackInput(
+  workspace: WorkspaceProfile,
+  track: WorkspaceTrackEntry,
+): ProductionPackageInput {
+  const d = workspace.defaults;
+  const o = track.overrides ?? {};
+
+  return {
+    // Per-track fields (never inherited)
+    outputDir: "",  // caller sets this
+    trackName: track.trackName,
+    tempo: track.tempo,
+    creativeBrief: track.creativeBrief,
+    signatureHooks: track.signatureHooks,
+
+    // Inherited: track override wins → workspace default
+    artistName: workspace.artistName,
+    keySignature: pick(o.keySignature, d.keySignature) ?? "F# minor",
+    styleVariant: pick(o.styleVariant, d.styleVariant) ?? "cinematic-euphoric",
+    leadStyle: pick(o.leadStyle, d.leadStyle) ?? "hybrid",
+    dropStrategy: pick(o.dropStrategy, d.dropStrategy) ?? "anti-climax-to-melodic",
+    energyProfile: pick(o.energyProfile, d.energyProfile) ?? "steady-escalation",
+    targetBars: pick(o.targetBars, d.targetBars) ?? 160,
+    substyle: pick(o.substyle, d.substyle),
+    kickStyle: pick(o.kickStyle, d.kickStyle),
+    antiClimaxStyle: pick(o.antiClimaxStyle, d.antiClimaxStyle),
+    arrangementFocus: pick(o.arrangementFocus, d.arrangementFocus),
+    vocalMode: pick(o.vocalMode, d.vocalMode),
+    djUtilityPriority: pick(o.djUtilityPriority, d.djUtilityPriority),
+    cinematicIntensity: pick(o.cinematicIntensity, d.cinematicIntensity),
+    aggressionLevel: pick(o.aggressionLevel, d.aggressionLevel),
+    emotionalTone: pick(o.emotionalTone, d.emotionalTone),
+    mood: pick(o.mood, d.mood),
+    focus: pick(o.focus, d.focus),
+    mixConcerns: pickArray(o.mixConcerns, d.mixConcerns),
+    referenceNotes: pickArray(o.referenceNotes, d.referenceNotes),
+    sectionGoals: pickRecord(o.sectionGoals, d.sectionGoals),
+  };
+}
+
+// ─── Workspace summary ──────────────────────────────────────────────────────────
+
+export interface WorkspaceSummary {
+  name: string;
+  artistName: string;
+  bpmRange: BpmRange | null;
+  defaultsSet: string[];
+  trackCount: number;
+  generatedCount: number;
+  tracks: Array<{
+    trackName: string;
+    trackSlug: string;
+    tempo: number;
+    packageGenerated: boolean;
+    overrideCount: number;
+  }>;
+}
+
+export function getWorkspaceSummary(outputDir: string): WorkspaceSummary {
+  const ws = readWorkspace(outputDir);
+
+  const defaultsSet = Object.entries(ws.defaults)
+    .filter(([, v]) => v !== undefined && v !== null)
+    .map(([k]) => k);
+
+  return {
+    name: ws.name,
+    artistName: ws.artistName,
+    bpmRange: ws.bpmRange ?? null,
+    defaultsSet,
+    trackCount: ws.tracks.length,
+    generatedCount: ws.tracks.filter((t) => t.packageGenerated).length,
+    tracks: ws.tracks.map((t) => ({
+      trackName: t.trackName,
+      trackSlug: t.trackSlug,
+      tempo: t.tempo,
+      packageGenerated: t.packageGenerated,
+      overrideCount: t.overrides ? Object.keys(t.overrides).length : 0,
+    })),
+  };
+}
+
+// ─── Validation ─────────────────────────────────────────────────────────────────
+
+function validateBpmRange(range: BpmRange): void {
+  if (range.min < 100 || range.max > 200) {
+    throw new Error(`BPM range must be within 100–200 (got ${range.min}–${range.max})`);
+  }
+  if (range.min > range.max) {
+    throw new Error(`BPM range min (${range.min}) cannot exceed max (${range.max})`);
+  }
+}
+
+function validateTempoInRange(tempo: number, range: BpmRange): void {
+  if (tempo < range.min || tempo > range.max) {
+    throw new Error(
+      `Tempo ${tempo} is outside workspace BPM range ${range.min}–${range.max}`,
+    );
+  }
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────────
+
+function pick<T>(override: T | undefined, base: T | undefined): T | undefined {
+  return override !== undefined ? override : base;
+}
+
+function pickArray(override: string[] | undefined, base: string[] | undefined): string[] | undefined {
+  if (override?.length) return [...override];
+  if (base?.length) return [...base];
+  return undefined;
+}
+
+function pickRecord(
+  override: Record<string, string> | undefined,
+  base: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (override && Object.keys(override).length) return { ...override };
+  if (base && Object.keys(base).length) return { ...base };
+  return undefined;
+}

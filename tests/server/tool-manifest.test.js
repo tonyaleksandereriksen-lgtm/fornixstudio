@@ -30,6 +30,7 @@ import { registerFallbackTools }          from "../../dist/tools/studio-one/fall
 import { registerMidiTools }              from "../../dist/tools/studio-one/midi.js";
 import { registerArrangementTools }       from "../../dist/tools/studio-one/arrangement.js";
 import { registerAutomationTools }        from "../../dist/tools/studio-one/automation.js";
+import { registerWorkspaceProfileTools } from "../../dist/tools/workspace-profile.js";
 
 function collectRegisteredNames() {
   const names = [];
@@ -52,6 +53,7 @@ function collectRegisteredNames() {
   registerMidiTools(fakeServer);
   registerArrangementTools(fakeServer);
   registerAutomationTools(fakeServer);
+  registerWorkspaceProfileTools(fakeServer);
 
   return names;
 }
