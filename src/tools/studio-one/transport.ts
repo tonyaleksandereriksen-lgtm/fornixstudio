@@ -17,6 +17,8 @@ import {
   sendCommand,
 } from "../../services/bridge.js";
 import { logAction, formatToolResult } from "../../services/logger.js";
+import { tryParseSongFile } from "../../services/song-file.js";
+import { guardPath } from "../../services/workspace.js";
 import type { S1BridgeCapabilities } from "../../types.js";
 
 function bridgeUnavailableMsg(action: string): string {
@@ -29,8 +31,13 @@ function bridgeUnavailableMsg(action: string): string {
   return (
     `⚠ Studio One bridge is not ready – cannot ${action} directly.\n` +
     `State: ${runtime.state}; handshakeOk=${runtime.handshakeOk ? "true" : "false"}.\n` +
-    `${hint}\n` +
-    "Use s1_export_instruction to generate a manual instruction file instead."
+    `${hint}\n\n` +
+    "File-based alternatives (no bridge needed):\n" +
+    "  - session_kickstart with outputDir — generates full session plan + instructions\n" +
+    "  - s1_export_instruction — write any DAW command as a JSON instruction file\n" +
+    "  - s1_generate_track_plan — create a complete track setup document\n" +
+    "  - s1_generate_bus_template — generate Fornix bus routing template\n" +
+    "  - fornix_generate_production_package — full production package docs"
   );
 }
 
@@ -128,25 +135,46 @@ export function registerTransportTools(server: McpServer): void {
 
   server.registerTool("s1_get_transport_state", {
     title: "Get Transport State",
-    description: "Get current Studio One transport state: play position, tempo, time signature, loop range.",
-    inputSchema: {},
+    description:
+      "Get current Studio One transport state: play position, tempo, time signature, loop range. " +
+      "When the bridge is unavailable, provide a songFilePath to read tempo and time sig from a .song file.",
+    inputSchema: {
+      songFilePath: z.string().optional().describe("Path to .song file (used when bridge is unavailable)"),
+    },
     annotations: { readOnlyHint: true, destructiveHint: false },
-  }, async () => {
-    const unavailable = requireBridge("read transport", ["transport", "song"]);
-    if (unavailable) {
-      return { content: [{ type: "text", text: unavailable }] };
+  }, async ({ songFilePath }) => {
+    // Try live bridge first
+    if (isBridgeReady() && hasBridgeCapability("transport") && hasBridgeCapability("song")) {
+      try {
+        const res = await sendCommand("getTransportState");
+        if (res.ok) {
+          return { content: [{ type: "text", text: formatToolResult(true, "Transport state (live)", res.data) }] };
+        }
+      } catch { /* fall through to file-based */ }
     }
 
-    try {
-      const res = await sendCommand("getTransportState");
-      if (!res.ok) {
-        throw new Error(res.errorMessage ?? res.error ?? "Unknown bridge error");
+    // File-based fallback
+    if (songFilePath) {
+      try {
+        guardPath(songFilePath);
+        const result = tryParseSongFile(songFilePath);
+        const lines = [
+          `═══ Transport State (from .song file) ═══`,
+          `Song: ${path.basename(songFilePath, ".song")}`,
+          `Tempo: ${result.tempo ?? "unknown"} BPM`,
+          `Time Signature: ${result.timeSignature ?? "4/4"}`,
+          `Tracks: ${result.tracks.length}`,
+          `Markers: ${result.markers.length}`,
+          "",
+          "Note: Play position and loop range are only available via live bridge.",
+        ];
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `✗ Could not read song file: ${e}` }], isError: true };
       }
-
-      return { content: [{ type: "text", text: formatToolResult(true, "Transport state", res.data) }] };
-    } catch (e) {
-      return { content: [{ type: "text", text: `✗ ${e}` }], isError: true };
     }
+
+    return { content: [{ type: "text", text: bridgeUnavailableMsg("read transport") }] };
   });
 
   // ── s1_set_tempo ─────────────────────────────────────────────────────────
@@ -218,25 +246,60 @@ export function registerTransportTools(server: McpServer): void {
 
   server.registerTool("s1_query_song_metadata", {
     title: "Query Song Metadata",
-    description: "Get song title, tempo, time sig, sample rate, and full track list from Studio One.",
-    inputSchema: {},
+    description:
+      "Get song title, tempo, time sig, sample rate, and full track list from Studio One. " +
+      "When the bridge is unavailable, provide a songFilePath to read directly from a .song file.",
+    inputSchema: {
+      songFilePath: z.string().optional().describe("Path to .song file (used when bridge is unavailable)"),
+    },
     annotations: { readOnlyHint: true, destructiveHint: false },
-  }, async () => {
-    const unavailable = requireBridge("query song metadata", ["song"]);
-    if (unavailable) {
-      return { content: [{ type: "text", text: unavailable }] };
+  }, async ({ songFilePath }) => {
+    // Try live bridge first
+    if (isBridgeReady() && hasBridgeCapability("song")) {
+      try {
+        const res = await sendCommand("getSongMetadata");
+        if (res.ok) {
+          return { content: [{ type: "text", text: formatToolResult(true, "Song metadata (live)", res.data) }] };
+        }
+      } catch { /* fall through to file-based */ }
     }
 
-    try {
-      const res = await sendCommand("getSongMetadata");
-      if (!res.ok) {
-        throw new Error(res.errorMessage ?? res.error ?? "Unknown bridge error");
+    // File-based fallback
+    if (songFilePath) {
+      try {
+        guardPath(songFilePath);
+        const result = tryParseSongFile(songFilePath);
+        const title = path.basename(songFilePath, ".song");
+        const folders = result.tracks.filter(t => t.type === "folder");
+        const audio = result.tracks.filter(t => t.type === "audio");
+        const instruments = result.tracks.filter(t => t.type === "instrument");
+
+        const lines = [
+          `═══ Song Metadata (from .song file) ═══`,
+          `Title: ${title}`,
+          `Tempo: ${result.tempo ?? "unknown"} BPM`,
+          `Time Signature: ${result.timeSignature ?? "4/4"}`,
+          `Tracks: ${result.tracks.length} total (${instruments.length} instrument, ${audio.length} audio, ${folders.length} folder/bus)`,
+          "",
+        ];
+
+        if (folders.length > 0) {
+          lines.push("Bus/Groups:", ...folders.map(f => `  - ${f.name}`), "");
+        }
+
+        if (result.markers.length > 0) {
+          lines.push("Markers:", ...result.markers.map(m => `  - ${m.name} @ bar ${m.positionBars}`), "");
+        }
+
+        lines.push(`Parse notes: ${result.parseNotes.join("; ")}`);
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `✗ Could not read song file: ${e}` }], isError: true };
       }
-
-      return { content: [{ type: "text", text: formatToolResult(true, "Song metadata", res.data) }] };
-    } catch (e) {
-      return { content: [{ type: "text", text: `✗ ${e}` }], isError: true };
     }
+
+    return { content: [{ type: "text", text: bridgeUnavailableMsg("query song metadata") }] };
   });
 
   // ── s1_bridge_status ──────────────────────────────────────────────────────

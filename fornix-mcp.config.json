@@ -1,8 +1,12 @@
 {
   "allowedDirs": [
-    "."
+    ".",
+    "C:\\Users\\Tony Eriksen\\Documents\\Studio One\\Songs",
+    "C:\\Users\\Tony Eriksen\\Music\\FornixOutput"
   ],
-  "readOnlyDirs": [],
+  "readOnlyDirs": [
+    "C:\\Users\\Tony Eriksen\\Documents\\Studio One\\Songs"
+  ],
   "dryRunByDefault": false,
   "gitRoot": ".",
   "s1BridgeEnabled": false

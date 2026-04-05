@@ -117,6 +117,12 @@ export const TOOL_MANIFEST = [
   { name: "fornix_generate_workspace_packages", family: "Workspace",       readOnly: false },
   { name: "fornix_create_workspace_from_template", family: "Workspace",    readOnly: false },
   { name: "fornix_check_workspace_consistency",    family: "Workspace",    readOnly: true  },
+  { name: "fornix_remove_track_from_workspace",   family: "Workspace",    readOnly: false },
+  { name: "fornix_update_workspace_defaults",      family: "Workspace",    readOnly: false },
+
+  // Session
+  // Arrangement Analysis
+  { name: "fornix_analyze_arrangement",  family: "Arrangement Analysis", readOnly: true },
 
   // Session
   { name: "session_kickstart",           family: "Session",        readOnly: false },

@@ -176,6 +176,104 @@ export function addTrackToWorkspace(input: AddTrackInput): { workspace: Workspac
   return { workspace, track };
 }
 
+// ─── Remove track ──────────────────────────────────────────────────────────────
+
+export interface RemoveTrackResult {
+  workspace: WorkspaceProfile;
+  removedTrack: WorkspaceTrackEntry;
+  packageCleaned: boolean;
+}
+
+export function removeTrackFromWorkspace(
+  outputDir: string,
+  trackSlug: string,
+  options?: { cleanPackage?: boolean },
+): RemoveTrackResult {
+  const workspace = readWorkspace(outputDir);
+  const idx = workspace.tracks.findIndex((t) => t.trackSlug === trackSlug);
+
+  if (idx === -1) {
+    throw new Error(`Track with slug "${trackSlug}" not found in workspace "${workspace.name}"`);
+  }
+
+  const [removedTrack] = workspace.tracks.splice(idx, 1);
+  writeWorkspace(outputDir, workspace);
+
+  let packageCleaned = false;
+  if (options?.cleanPackage) {
+    const packageRoot = path.join(outputDir, FORNIX_OUTPUT_ROOT, trackSlug);
+    if (fs.existsSync(packageRoot)) {
+      fs.rmSync(packageRoot, { recursive: true, force: true });
+      packageCleaned = true;
+    }
+  }
+
+  return { workspace, removedTrack, packageCleaned };
+}
+
+// ─── Update defaults ───────────────────────────────────────────────────────────
+
+export interface UpdateDefaultsResult {
+  workspace: WorkspaceProfile;
+  updatedFields: string[];
+  removedFields: string[];
+}
+
+export function updateWorkspaceDefaults(
+  outputDir: string,
+  defaults: Partial<WorkspaceStyleDefaults>,
+  options?: { merge?: boolean },
+): UpdateDefaultsResult {
+  const workspace = readWorkspace(outputDir);
+  const merge = options?.merge !== false; // default: merge
+
+  const updatedFields: string[] = [];
+  const removedFields: string[] = [];
+
+  if (merge) {
+    for (const [key, value] of Object.entries(defaults)) {
+      if (value !== undefined) {
+        const prev = (workspace.defaults as Record<string, unknown>)[key];
+        if (JSON.stringify(prev) !== JSON.stringify(value)) {
+          updatedFields.push(key);
+        }
+        (workspace.defaults as Record<string, unknown>)[key] = value;
+      }
+    }
+  } else {
+    // Replace mode: track what was added/changed and what was removed
+    const oldKeys = new Set(
+      Object.keys(workspace.defaults).filter(
+        (k) => (workspace.defaults as Record<string, unknown>)[k] !== undefined,
+      ),
+    );
+    const newKeys = new Set(
+      Object.keys(defaults).filter(
+        (k) => (defaults as Record<string, unknown>)[k] !== undefined,
+      ),
+    );
+
+    for (const key of newKeys) {
+      const prev = (workspace.defaults as Record<string, unknown>)[key];
+      const next = (defaults as Record<string, unknown>)[key];
+      if (JSON.stringify(prev) !== JSON.stringify(next)) {
+        updatedFields.push(key);
+      }
+    }
+
+    for (const key of oldKeys) {
+      if (!newKeys.has(key)) {
+        removedFields.push(key);
+      }
+    }
+
+    workspace.defaults = defaults as WorkspaceStyleDefaults;
+  }
+
+  writeWorkspace(outputDir, workspace);
+  return { workspace, updatedFields, removedFields };
+}
+
 /** Mark a track as having a generated package. */
 export function markTrackGenerated(outputDir: string, trackSlug: string): void {
   const workspace = readWorkspace(outputDir);

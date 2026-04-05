@@ -40,7 +40,7 @@ src/index.ts   (McpServer, StdioServerTransport)
         project.ts           project_* tools (build, test, lint, typecheck)
         sound-design.ts      sd_* tools
         session.ts           session_* tools
-        workspace-profile.ts fornix_create_workspace, fornix_get_workspace_summary, fornix_add_track_to_workspace
+        workspace-profile.ts fornix_create/get/add workspace + pipeline + consistency tools
         production-package.ts + production-package-planning.ts (includes batch regen + template tools)
         studio-one/
           transport.ts       s1_get_transport_state, s1_set_tempo, s1_probe_runtime …
@@ -93,6 +93,11 @@ Install path (Windows): `%APPDATA%\PreSonus\Studio One 7\Extensions\FornixMCPBri
 - `fornix_create_workspace` — creates workspace.json with shared defaults
 - `fornix_get_workspace_summary` — reads track list, generation status, override counts
 - `fornix_add_track_to_workspace` — adds a track with tempo validation against BPM range
+- `fornix_generate_workspace_packages` — generates production packages for all tracks (inheritance applied, skip already-generated unless `regenerate: true`)
+- `fornix_create_workspace_from_template` — creates workspace pre-populated from a template's style defaults
+- `fornix_check_workspace_consistency` — compares generated packages against resolved workspace+override expectations, reports drift and missing packages
+- `fornix_remove_track_from_workspace` — remove a track by slug, optionally cleaning up its generated package
+- `fornix_update_workspace_defaults` — merge or replace workspace-level style defaults (use with consistency check to detect + resolve drift)
 
 When `writeProductionPackage` runs inside a directory with a workspace.json, it records `workspaceRef` in the package metadata for provenance.
 
@@ -105,6 +110,14 @@ When `writeProductionPackage` runs inside a directory with a workspace.json, it 
 ## Template library
 
 5 pre-built hardstyle production templates accessible via `fornix_list_templates` (with optional category filter) and `fornix_get_template`. Categories: euphoric, raw, cinematic, festival, hybrid. Each template provides a complete set of style defaults, creative brief, mix concerns, and reference notes ready to populate workspace defaults or individual track profiles.
+
+## Arrangement analysis (POC)
+
+`fornix_analyze_arrangement` reads a Studio One `.song` file from disk or accepts manual section input, then returns actionable arrangement consultation. The probe tries three strategies: ZIP extraction (S1 .song = ZIP with XML), raw XML parse, binary string scan. If the file format is unreadable, the tool returns evidence of what was found and accepts `manualSections` as a fallback — it is never useless.
+
+Analysis output includes: section map with bar ranges and flags, energy arc assessment (intro → build → peak → resolution), specific problems with bar references, and concrete actions with bar targets. Hardstyle-specific checks: missing drops, short drops (<32 bars), missing build-ups before drops.
+
+Files: `src/services/song-file.ts` (probe), `src/services/arrangement.ts` (analysis), `src/tools/arrangement.ts` (MCP tool).
 
 ## Key constraints
 

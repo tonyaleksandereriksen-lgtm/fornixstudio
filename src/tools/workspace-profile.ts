@@ -16,6 +16,8 @@ import {
   createWorkspaceFromTemplate,
   generateWorkspacePackages,
   getWorkspaceSummary,
+  removeTrackFromWorkspace,
+  updateWorkspaceDefaults,
 } from "../services/workspace-profile.js";
 
 // ─── Shared Zod shapes ─────────────────────────────────────────────────────────
@@ -371,6 +373,102 @@ export function registerWorkspaceProfileTools(server: McpServer): void {
     } catch (e) {
       const err = String(e);
       logAction({ tool: "fornix_check_workspace_consistency", action: "read", summary: err, dryRun: false, ok: false, error: err });
+      return { content: [{ type: "text" as const, text: `✗ ${err}` }], isError: true };
+    }
+  });
+
+  // ── fornix_remove_track_from_workspace ─────────────────────────────────────
+  server.registerTool("fornix_remove_track_from_workspace", {
+    title: "Remove Track from Workspace",
+    description:
+      "Remove a track from the workspace by its slug. Optionally deletes the track's generated package directory.",
+    inputSchema: {
+      outputDir: z.string().describe("Directory containing workspace.json"),
+      trackSlug: z.string().min(1).describe("Track slug to remove (as shown in workspace summary)"),
+      cleanPackage: z.boolean().default(false).describe("Also delete the track's generated package files"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+  }, async (rawInput) => {
+    try {
+      const resolvedDir = guardPath(rawInput.outputDir);
+      const result = removeTrackFromWorkspace(resolvedDir, rawInput.trackSlug, {
+        cleanPackage: rawInput.cleanPackage,
+      });
+
+      const summary = `Track "${result.removedTrack.trackName}" removed from workspace "${result.workspace.name}"`;
+      logAction({ tool: "fornix_remove_track_from_workspace", action: "write", target: resolvedDir, summary, dryRun: false, ok: true });
+
+      return {
+        content: [{
+          type: "text" as const,
+          text: formatToolResult(true, summary, {
+            removedTrack: result.removedTrack.trackName,
+            removedSlug: result.removedTrack.trackSlug,
+            packageCleaned: result.packageCleaned,
+            remainingTracks: result.workspace.tracks.length,
+          }),
+        }],
+      };
+    } catch (e) {
+      const err = String(e);
+      logAction({ tool: "fornix_remove_track_from_workspace", action: "write", summary: err, dryRun: false, ok: false, error: err });
+      return { content: [{ type: "text" as const, text: `✗ ${err}` }], isError: true };
+    }
+  });
+
+  // ── fornix_update_workspace_defaults ───────────────────────────────────────
+  server.registerTool("fornix_update_workspace_defaults", {
+    title: "Update Workspace Defaults",
+    description:
+      "Update the shared style defaults for an existing workspace. " +
+      "By default merges with existing defaults (only specified fields change). " +
+      "Set merge=false to replace all defaults entirely. " +
+      "After updating, use fornix_check_workspace_consistency to detect drift against generated packages.",
+    inputSchema: {
+      outputDir: z.string().describe("Directory containing workspace.json"),
+      defaults: styleDefaultsSchema.describe("Style defaults to set or merge"),
+      merge: z.boolean().default(true).describe("true = merge with existing defaults; false = replace entirely"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  }, async (rawInput) => {
+    try {
+      const resolvedDir = guardPath(rawInput.outputDir);
+      const result = updateWorkspaceDefaults(
+        resolvedDir,
+        (rawInput.defaults ?? {}) as Partial<WorkspaceStyleDefaults>,
+        { merge: rawInput.merge },
+      );
+
+      const parts: string[] = [];
+      if (result.updatedFields.length > 0) {
+        parts.push(`Updated: ${result.updatedFields.join(", ")}`);
+      }
+      if (result.removedFields.length > 0) {
+        parts.push(`Removed: ${result.removedFields.join(", ")}`);
+      }
+      if (parts.length === 0) {
+        parts.push("No changes detected");
+      }
+
+      const summary = `Workspace "${result.workspace.name}" defaults updated (${rawInput.merge ? "merge" : "replace"})`;
+      logAction({ tool: "fornix_update_workspace_defaults", action: "write", target: resolvedDir, summary, dryRun: false, ok: true });
+
+      return {
+        content: [{
+          type: "text" as const,
+          text: formatToolResult(true, summary, {
+            mode: rawInput.merge ? "merge" : "replace",
+            updatedFields: result.updatedFields,
+            removedFields: result.removedFields,
+            totalDefaults: Object.keys(result.workspace.defaults).filter(
+              (k) => (result.workspace.defaults as Record<string, unknown>)[k] !== undefined,
+            ).length,
+          }),
+        }],
+      };
+    } catch (e) {
+      const err = String(e);
+      logAction({ tool: "fornix_update_workspace_defaults", action: "write", summary: err, dryRun: false, ok: false, error: err });
       return { content: [{ type: "text" as const, text: `✗ ${err}` }], isError: true };
     }
   });

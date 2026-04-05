@@ -28,6 +28,7 @@ import { registerMidiTools }        from "./tools/studio-one/midi.js";
 import { registerArrangementTools } from "./tools/studio-one/arrangement.js";
 import { registerAutomationTools }  from "./tools/studio-one/automation.js";
 import { registerWorkspaceProfileTools } from "./tools/workspace-profile.js";
+import { registerArrangementAnalysisTools } from "./tools/arrangement.js";
 
 const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT ?? process.cwd();
 
@@ -96,6 +97,7 @@ async function main(): Promise<void> {
   registerArrangementTools(server);
   registerAutomationTools(server);
   registerWorkspaceProfileTools(server);
+  registerArrangementAnalysisTools(server);
 
   const familyCount = new Set(TOOL_MANIFEST.map((tool) => tool.family)).size;
   process.stderr.write(`[init] ${TOOL_MANIFEST.length} tools ready across ${familyCount} families.\n`);

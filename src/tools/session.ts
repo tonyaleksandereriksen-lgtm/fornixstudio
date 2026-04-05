@@ -5,10 +5,15 @@
 //   session_apply_mix_preset - apply Fornix plugin settings across the mix
 //   session_health_check    - analyse the current project for issues
 
+import fs from "fs";
+import path from "path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { sendCommand, isBridgeReady } from "../services/bridge.js";
 import { logAction, formatToolResult, truncate } from "../services/logger.js";
+import { guardPath, isReadOnly } from "../services/workspace.js";
+import { tryParseSongFile } from "../services/song-file.js";
+import { buildArrangementSummary, analyzeArrangement } from "../services/arrangement.js";
 
 // ── Fornix Plugin Preset Library ──────────────────────────────────────────────
 //
@@ -107,10 +112,96 @@ const HARDSTYLE_BUSES = [
   { name: "Master",      color: "#222244", plugins: ["Ozone 12 Dynamics", "FabFilter Pro-L 2"] },
 ] as const;
 
-function notConnected(action: string) {
-  return {
-    content: [{ type: "text" as const, text: `⚠ Bridge not connected – cannot ${action}.\nUse s1_generate_bus_template as a fallback.` }],
-  };
+// ── Session marker builder ──────────────────────────────────────────────────
+
+function buildSessionMarkers(_tempo: number) {
+  const sections = [
+    { name: "Intro", bars: 16, color: "#444466" },
+    { name: "Breakdown", bars: 16, color: "#225588" },
+    { name: "Build-up", bars: 8, color: "#884400" },
+    { name: "Drop 1", bars: 32, color: "#CC2200" },
+    { name: "Breakdown 2", bars: 16, color: "#225588" },
+    { name: "Build-up 2", bars: 8, color: "#884400" },
+    { name: "Drop 2", bars: 32, color: "#CC2200" },
+    { name: "Outro", bars: 16, color: "#334433" },
+  ];
+
+  let bar = 1;
+  return sections.map(s => {
+    const marker = { bar, name: s.name, bars: s.bars, color: s.color };
+    bar += s.bars;
+    return marker;
+  });
+}
+
+// ── Session markdown builder ────────────────────────────────────────────────
+
+function buildSessionMarkdown(
+  songTitle: string,
+  tempo: number,
+  timeSigNum: number,
+  tracks: Array<{ name: string; type: string; color?: string; bus?: string; plugins: string[] }>,
+  markers: Array<{ bar: number; name: string; bars: number; color: string }>,
+): string {
+  const lines = [
+    `# Session Plan – ${songTitle}`,
+    "",
+    `**Tempo:** ${tempo} BPM  `,
+    `**Time Signature:** ${timeSigNum}/4  `,
+    `**Generated:** ${new Date().toLocaleString()}`,
+    "",
+  ];
+
+  if (markers.length > 0) {
+    lines.push("## Arrangement", "");
+    lines.push("| Section | Start Bar | Length | Color |");
+    lines.push("|---------|-----------|--------|-------|");
+    for (const m of markers) {
+      lines.push(`| ${m.name} | Bar ${m.bar} | ${m.bars} bars | ${m.color} |`);
+    }
+    const totalBars = markers[markers.length - 1].bar + markers[markers.length - 1].bars - 1;
+    lines.push("", `**Total Length:** ${totalBars} bars (${(totalBars * 4 * 60 / tempo / 60).toFixed(1)} min)`);
+    lines.push("");
+  }
+
+  const buses = tracks.filter(t => t.type === "bus");
+  const other = tracks.filter(t => t.type !== "bus");
+
+  if (buses.length > 0) {
+    lines.push("## Buses", "");
+    for (const bus of buses) {
+      lines.push(`### ${bus.name}`);
+      if (bus.color) lines.push(`- **Color:** ${bus.color}`);
+      if (bus.plugins.length > 0) {
+        lines.push(`- **Plugins:** ${bus.plugins.join(" → ")}`);
+      }
+      lines.push("");
+    }
+  }
+
+  if (other.length > 0) {
+    lines.push("## Tracks", "");
+    for (const track of other) {
+      lines.push(`### ${track.name}`);
+      lines.push(`- **Type:** ${track.type}`);
+      if (track.bus) lines.push(`- **Routed to:** ${track.bus}`);
+      lines.push("");
+    }
+  }
+
+  lines.push(
+    "## Setup Instructions",
+    "",
+    "1. Create a new song in Studio One",
+    `2. Set tempo to **${tempo} BPM**`,
+    "3. Create each bus listed above (right-click in mixer → Add Bus Channel)",
+    "4. Add the listed plugins to each bus in order",
+    "5. Create the tracks and route them to their assigned buses",
+    "6. Add arrangement markers at the bar positions listed above",
+    "",
+  );
+
+  return lines.join("\n");
 }
 
 export function registerSessionTools(server: McpServer): void {
@@ -122,7 +213,9 @@ export function registerSessionTools(server: McpServer): void {
     description:
       "Set up a hardstyle session skeleton: tempo, Fornix buses, plugin inserts, " +
       "arrangement markers, and initial tracks. " +
-      "Song title and time signature inputs are planning metadata only unless a verified DAW command exists.",
+      "Works in two modes: (1) live bridge — sends commands to Studio One directly, " +
+      "(2) file-based — writes a complete session plan + instruction set to outputDir for manual import. " +
+      "File-based mode activates automatically when the bridge is not connected.",
     inputSchema: {
       songTitle: z.string().default("Untitled Hardstyle"),
       tempo: z.number().min(100).max(180).default(150).describe("BPM"),
@@ -135,99 +228,167 @@ export function registerSessionTools(server: McpServer): void {
         type: z.enum(["audio", "instrument"]),
         bus: z.string().optional(),
       })).optional().describe("Extra tracks to create beyond the buses"),
+      outputDir: z.string().optional().describe("Output directory for file-based mode (required when bridge is down, defaults to working directory)"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   }, async ({
     songTitle, tempo, timeSignatureNumerator,
     createBuses, insertPlugins, createArrangementMarkers, initialTracks,
+    outputDir,
   }) => {
-    if (!isBridgeReady()) return notConnected("kickstart session");
+    // ── Live bridge mode ──────────────────────────────────────────────────
+    if (isBridgeReady()) {
+      const results: string[] = [];
+      let errors = 0;
 
-    const results: string[] = [];
-    let errors = 0;
-
-    async function step(label: string, command: string, params: Record<string, unknown>) {
-      try {
-        const res = await sendCommand(command, params);
-        if (!res.ok) throw new Error(res.error ?? "Unknown error");
-        results.push(`  ✓ ${label}`);
-      } catch (e) {
-        results.push(`  ✗ ${label}: ${e}`);
-        errors++;
-      }
-    }
-
-    // 1. Set tempo
-    await step(`Tempo → ${tempo} BPM`, "setTempo", { bpm: tempo });
-
-    if (timeSignatureNumerator !== 4) {
-      results.push(`  ⚠ Time signature request ${timeSignatureNumerator}/4 noted, but no verified bridge command exists to apply it.`);
-    }
-    results.push(`  ℹ Song title "${songTitle}" is currently metadata for planning/logging only.`);
-
-    // 2. Create buses
-    if (createBuses) {
-      for (const bus of HARDSTYLE_BUSES) {
-        await step(`Bus: ${bus.name}`, "createTrack", { name: bus.name, type: "bus", color: bus.color });
-      }
-    }
-
-    // 3. Insert plugins
-    if (insertPlugins && createBuses) {
-      for (const bus of HARDSTYLE_BUSES) {
-        for (const plugin of bus.plugins) {
-          await step(`  ${bus.name} ← ${plugin}`, "addPlugin", { trackName: bus.name, pluginName: plugin });
+      async function step(label: string, command: string, params: Record<string, unknown>) {
+        try {
+          const res = await sendCommand(command, params);
+          if (!res.ok) throw new Error(res.error ?? "Unknown error");
+          results.push(`  ✓ ${label}`);
+        } catch (e) {
+          results.push(`  ✗ ${label}: ${e}`);
+          errors++;
         }
       }
-    }
 
-    // 4. Arrangement markers (hardstyle layout)
-    if (createArrangementMarkers) {
-      const sections = [
-        { name: "Intro", bars: 16, color: "#444466" },
-        { name: "Breakdown", bars: 16, color: "#225588" },
-        { name: "Build-up", bars: 8, color: "#884400" },
-        { name: "Drop 1", bars: 32, color: "#CC2200" },
-        { name: "Breakdown 2", bars: 16, color: "#225588" },
-        { name: "Build-up 2", bars: 8, color: "#884400" },
-        { name: "Drop 2", bars: 32, color: "#CC2200" },
-        { name: "Outro", bars: 16, color: "#334433" },
-      ];
-
-      const markers: Array<{ bar: number; name: string; color: string }> = [];
-      let bar = 1;
-      for (const s of sections) {
-        markers.push({ bar, name: s.name, color: s.color });
-        bar += s.bars;
+      await step(`Tempo → ${tempo} BPM`, "setTempo", { bpm: tempo });
+      if (timeSignatureNumerator !== 4) {
+        results.push(`  ⚠ Time signature ${timeSignatureNumerator}/4 noted — no verified bridge command.`);
       }
-      await step(`Arrangement markers (${markers.length} sections)`, "addMarkersMulti", { markers });
-      await step(`Total length: ${bar - 1} bars`, "setLoopRange", { startBar: 1, endBar: bar - 1 });
-    }
 
-    // 5. Initial tracks
-    for (const track of initialTracks ?? []) {
-      await step(`Track: ${track.name} (${track.type})`, "createTrack", {
-        name: track.name, type: track.type,
-      });
-      if (track.bus) {
-        await step(`  Send: ${track.name} → ${track.bus}`, "createSend", {
-          fromTrackName: track.name, toBusName: track.bus, sendLevelDb: 0,
-        });
+      if (createBuses) {
+        for (const bus of HARDSTYLE_BUSES) {
+          await step(`Bus: ${bus.name}`, "createTrack", { name: bus.name, type: "bus", color: bus.color });
+        }
       }
+
+      if (insertPlugins && createBuses) {
+        for (const bus of HARDSTYLE_BUSES) {
+          for (const plugin of bus.plugins) {
+            await step(`  ${bus.name} ← ${plugin}`, "addPlugin", { trackName: bus.name, pluginName: plugin });
+          }
+        }
+      }
+
+      if (createArrangementMarkers) {
+        const markers = buildSessionMarkers(tempo);
+        await step(`Arrangement markers (${markers.length} sections)`, "addMarkersMulti", { markers: markers.map(m => ({ bar: m.bar, name: m.name, color: m.color })) });
+        const totalBars = markers[markers.length - 1].bar + markers[markers.length - 1].bars - 1;
+        await step(`Total length: ${totalBars} bars`, "setLoopRange", { startBar: 1, endBar: totalBars });
+      }
+
+      for (const track of initialTracks ?? []) {
+        await step(`Track: ${track.name} (${track.type})`, "createTrack", { name: track.name, type: track.type });
+        if (track.bus) {
+          await step(`  Send: ${track.name} → ${track.bus}`, "createSend", { fromTrackName: track.name, toBusName: track.bus, sendLevelDb: 0 });
+        }
+      }
+
+      const ok = errors === 0;
+      const summary = ok
+        ? `Session "${songTitle}" kickstarted (live): ${results.filter(r => r.includes("✓")).length} steps completed`
+        : `Session kickstart completed with ${errors} error(s)`;
+      logAction({ tool: "session_kickstart", action: "s1_bridge", summary, dryRun: false, ok });
+      return { content: [{ type: "text", text: formatToolResult(ok, summary, results.join("\n")) }] };
     }
 
-    const ok = errors === 0;
-    const summary = ok
-      ? `Session "${songTitle}" kickstarted: ${results.filter(r => r.includes("✓")).length} steps completed`
-      : `Session kickstart completed with ${errors} error(s)`;
+    // ── File-based fallback mode ──────────────────────────────────────────
+    try {
+      if (!outputDir) {
+        return {
+          content: [{ type: "text", text:
+            "⚠ Bridge not connected — file-based mode requires outputDir.\n" +
+            "Provide an outputDir (your Studio One project folder or Fornix output directory) and I'll generate the full session plan there." }],
+          isError: true,
+        };
+      }
 
-    logAction({ tool: "session_kickstart", action: "s1_bridge", summary, dryRun: false, ok });
-    return {
-      content: [{
-        type: "text",
-        text: formatToolResult(ok, summary, results.join("\n")),
-      }],
-    };
+      const abs = guardPath(outputDir);
+      if (isReadOnly(abs)) throw new Error(`${abs} is in a read-only directory`);
+      fs.mkdirSync(abs, { recursive: true });
+
+      const sessionDir = path.join(abs, "Fornix", "session-kickstart");
+      fs.mkdirSync(sessionDir, { recursive: true });
+
+      // Build all instruction data
+      const allInstructions: Array<{ command: string; params: Record<string, unknown> }> = [];
+      const allTracks: Array<{ name: string; type: string; color?: string; bus?: string; plugins: string[]; notes?: string }> = [];
+
+      allInstructions.push({ command: "setTempo", params: { bpm: tempo } });
+
+      if (createBuses) {
+        for (const bus of HARDSTYLE_BUSES) {
+          allInstructions.push({ command: "createTrack", params: { name: bus.name, type: "bus", color: bus.color } });
+          allTracks.push({ name: bus.name, type: "bus", color: bus.color, plugins: [...bus.plugins] });
+          if (insertPlugins) {
+            for (const plugin of bus.plugins) {
+              allInstructions.push({ command: "addPlugin", params: { trackName: bus.name, pluginName: plugin } });
+            }
+          }
+        }
+      }
+
+      if (createArrangementMarkers) {
+        const markers = buildSessionMarkers(tempo);
+        allInstructions.push({ command: "addMarkersMulti", params: { markers: markers.map(m => ({ bar: m.bar, name: m.name, color: m.color })) } });
+        const totalBars = markers[markers.length - 1].bar + markers[markers.length - 1].bars - 1;
+        allInstructions.push({ command: "setLoopRange", params: { startBar: 1, endBar: totalBars } });
+      }
+
+      for (const track of initialTracks ?? []) {
+        allInstructions.push({ command: "createTrack", params: { name: track.name, type: track.type } });
+        allTracks.push({ name: track.name, type: track.type, bus: track.bus, plugins: [] });
+        if (track.bus) {
+          allInstructions.push({ command: "createSend", params: { fromTrackName: track.name, toBusName: track.bus, sendLevelDb: 0 } });
+        }
+      }
+
+      // Write instruction JSON
+      const instructionPath = path.join(sessionDir, "s1-instructions.json");
+      fs.writeFileSync(instructionPath, JSON.stringify({
+        version: 1,
+        createdAt: new Date().toISOString(),
+        label: "session-kickstart",
+        songTitle,
+        tempo,
+        instructions: allInstructions,
+      }, null, 2), "utf8");
+
+      // Write track plan JSON
+      const trackPlanPath = path.join(sessionDir, "track-plan.json");
+      fs.writeFileSync(trackPlanPath, JSON.stringify({
+        version: 1,
+        songTitle,
+        tempo,
+        createdAt: new Date().toISOString(),
+        tracks: allTracks,
+      }, null, 2), "utf8");
+
+      // Write human-readable session plan (Markdown)
+      const markers = createArrangementMarkers ? buildSessionMarkers(tempo) : [];
+      const md = buildSessionMarkdown(songTitle, tempo, timeSignatureNumerator, allTracks, markers);
+      const mdPath = path.join(sessionDir, "session-plan.md");
+      fs.writeFileSync(mdPath, md, "utf8");
+
+      const fileList = [instructionPath, trackPlanPath, mdPath].map(f => path.basename(f)).join(", ");
+      const summary = `Session "${songTitle}" plan written (file-based): ${allInstructions.length} instructions, ${allTracks.length} tracks`;
+      logAction({ tool: "session_kickstart", action: "write", target: sessionDir, summary, dryRun: false, ok: true });
+
+      return {
+        content: [{ type: "text", text: formatToolResult(true, summary,
+          `Mode: file-based (bridge not connected)\n` +
+          `Output: ${sessionDir}\n` +
+          `Files: ${fileList}\n\n` +
+          `Next steps:\n` +
+          `  1. Open Studio One and create a new song at ${tempo} BPM\n` +
+          `  2. Follow session-plan.md to set up buses, plugins, and tracks\n` +
+          `  3. The instruction JSON can be imported if the bridge becomes available\n` +
+          `  4. Use fornix_generate_production_package to create detailed production docs`) }],
+      };
+    } catch (e) {
+      return { content: [{ type: "text", text: `✗ ${e}` }], isError: true };
+    }
   });
 
   // ── session_apply_mix_preset ──────────────────────────────────────────────
@@ -279,16 +440,21 @@ export function registerSessionTools(server: McpServer): void {
       .map(([k, v]) => `  ${k}: ${v}`)
       .join("\n");
 
-    if (dryRun) {
+    if (dryRun || !isBridgeReady()) {
+      const modeNote = !isBridgeReady() && !dryRun
+        ? "\n\nBridge not connected — showing preset values for manual application in Studio One.\n" +
+          "Open the plugin UI and set these parameters manually, or re-run with the bridge active."
+        : "";
       return {
         content: [{
           type: "text",
-          text: formatToolResult(true, `[DRY-RUN] Would apply "${presetName}" to ${pluginName} on "${trackName}"`, paramList, true),
+          text: formatToolResult(true,
+            `${dryRun ? "[DRY-RUN] " : ""}Preset "${presetName}" for ${pluginName} on "${trackName}"`,
+            paramList + modeNote,
+            dryRun),
         }],
       };
     }
-
-    if (!isBridgeReady()) return notConnected(`apply preset to "${pluginName}"`);
 
     const results: string[] = [];
     let errors = 0;
@@ -317,98 +483,174 @@ export function registerSessionTools(server: McpServer): void {
   server.registerTool("session_health_check", {
     title: "Session Health Check",
     description:
-      "Analyse the current Studio One session for the checks implemented in this repo: " +
-      "tempo mismatch, missing recommended buses, muted tracks, hot track volumes, and missing Master bus.",
+      "Analyse a Studio One session for common issues: " +
+      "tempo mismatch, missing recommended buses, track counts, arrangement problems. " +
+      "Works in two modes: (1) live bridge — queries Studio One directly, " +
+      "(2) file-based — reads a .song file from disk. " +
+      "Provide songFilePath for file-based mode.",
     inputSchema: {
       expectedTempo: z.number().min(60).max(220).optional()
         .describe("Flag if session tempo differs from this value"),
+      songFilePath: z.string().optional()
+        .describe("Path to a .song file for offline analysis (file-based mode)"),
     },
     annotations: { readOnlyHint: true, destructiveHint: false },
-  }, async ({ expectedTempo }) => {
-    if (!isBridgeReady()) {
+  }, async ({ expectedTempo, songFilePath }) => {
+
+    // ── Gather session data from either source ───────────────────────────
+    let songTempo: number | null = null;
+    let tracks: Array<{ name: string; type: string; muted?: boolean; volume?: number }> = [];
+    let mode: string;
+    let arrangementNote = "";
+
+    if (isBridgeReady()) {
+      mode = "live";
+      try {
+        const metaRes = await sendCommand("getSongMetadata");
+        if (!metaRes.ok) throw new Error(metaRes.error);
+        const song = metaRes.data as {
+          tempo: number;
+          tracks: Array<{ name: string; type: string; muted: boolean; volume: number }>;
+        };
+        songTempo = song.tempo;
+        tracks = song.tracks;
+      } catch (e) {
+        return { content: [{ type: "text", text: `✗ Health check failed (live): ${e}` }], isError: true };
+      }
+    } else if (songFilePath) {
+      mode = "file";
+      try {
+        const abs = guardPath(songFilePath);
+        const parsed = tryParseSongFile(abs);
+
+        if (parsed.format === "unknown") {
+          return {
+            content: [{ type: "text", text:
+              `⚠ Could not parse ${path.basename(songFilePath)} (format: ${parsed.format}).\n` +
+              `Studio One .song files are typically ZIP archives. ` +
+              `If parsing failed, the file may be open in Studio One — try closing it first, or provide the path to a backup copy.` }],
+            isError: true,
+          };
+        }
+
+        songTempo = parsed.tempo;
+        tracks = parsed.tracks.map(t => ({ name: t.name, type: t.type ?? "audio" }));
+
+        // Run arrangement analysis if we got markers
+        if (parsed.markers.length >= 2) {
+          const summary = buildArrangementSummary(parsed);
+          const analysis = analyzeArrangement(summary, {
+            genre: "hardstyle",
+            targetLengthMinutes: 5.5,
+            ...(expectedTempo ? {} : {}),
+          });
+          if (analysis.problems.length > 0) {
+            arrangementNote = "\n\nArrangement:\n" +
+              analysis.problems.slice(0, 5).map(p => `  ⚠ [${p.section}] ${p.problem}`).join("\n") +
+              (analysis.problems.length > 5 ? `\n  ... and ${analysis.problems.length - 5} more (use fornix_analyze_arrangement for full report)` : "");
+          } else {
+            arrangementNote = "\n\nArrangement:\n  ✓ Structure looks solid — " + analysis.energyArc.verdict + " energy arc";
+          }
+        }
+      } catch (e) {
+        return { content: [{ type: "text", text: `✗ Health check failed (file): ${e}` }], isError: true };
+      }
+    } else {
       return {
-        content: [{
-          type: "text",
-          text: "⚠ Bridge not connected – health check requires a live Studio One session.",
-        }],
+        content: [{ type: "text", text:
+          "⚠ Bridge not connected and no songFilePath provided.\n\n" +
+          "Two ways to run a health check:\n" +
+          "  1. Provide songFilePath — path to your .song file for offline analysis\n" +
+          "  2. Enable the bridge — for live Studio One queries (not available on S1 7)\n\n" +
+          "Your .song files are typically in:\n" +
+          "  C:\\Users\\<you>\\Documents\\Studio One\\Songs\\<song-name>\\<song-name>.song" }],
+        isError: true,
       };
     }
 
-    try {
-      const metaRes = await sendCommand("getSongMetadata");
-      if (!metaRes.ok) throw new Error(metaRes.error);
+    // ── Run health checks ───────────────────────────────────────────────
+    const issues: string[] = [];
+    const warnings: string[] = [];
+    const okChecks: string[] = [];
 
-      const song = metaRes.data as {
-        tempo: number;
-        tracks: Array<{ name: string; type: string; muted: boolean; volume: number }>;
-      };
-
-      const issues: string[] = [];
-      const warnings: string[] = [];
-      const ok: string[] = [];
-
-      // Tempo check
-      if (expectedTempo && Math.abs(song.tempo - expectedTempo) > 0.1) {
-        issues.push(`Tempo is ${song.tempo} BPM, expected ${expectedTempo} BPM`);
+    // Tempo check
+    if (songTempo !== null) {
+      if (expectedTempo && Math.abs(songTempo - expectedTempo) > 0.1) {
+        issues.push(`Tempo is ${songTempo} BPM, expected ${expectedTempo} BPM`);
       } else {
-        ok.push(`Tempo: ${song.tempo} BPM`);
+        okChecks.push(`Tempo: ${songTempo} BPM`);
       }
+    } else {
+      warnings.push("Could not determine tempo from song file");
+    }
 
-      const trackNames = song.tracks.map(t => t.name.toLowerCase());
-      const busNames = song.tracks.filter(t => t.type === "bus").map(t => t.name);
+    const trackNames = tracks.map(t => t.name.toLowerCase());
+    // S1 uses FolderTracks as bus groups — treat both "bus" and "folder" as buses
+    const busNames = tracks
+      .filter(t => t.type === "bus" || t.type === "folder")
+      .map(t => t.name);
 
-      // Check for required Fornix buses
-      const requiredBuses = ["Kick & Bass", "LEAD", "Master"];
-      for (const bus of requiredBuses) {
-        if (busNames.some(b => b.toLowerCase() === bus.toLowerCase())) {
-          ok.push(`Bus present: ${bus}`);
-        } else {
-          warnings.push(`Missing recommended bus: "${bus}"`);
-        }
+    // Check for required Fornix buses (fuzzy: "Kick/Bass" matches "Kick & Bass", etc.)
+    const busChecks: Array<{ label: string; match: (n: string) => boolean }> = [
+      { label: "Kick & Bass", match: n => /kick.*bass|bass.*kick/i.test(n) },
+      { label: "LEAD",        match: n => /\blead/i.test(n) },
+    ];
+    for (const check of busChecks) {
+      if (busNames.some(b => check.match(b))) {
+        okChecks.push(`Bus/group present: ${check.label}`);
+      } else {
+        warnings.push(`Missing recommended bus/group: "${check.label}"`);
       }
+    }
 
-      // Check for muted tracks (possible accidental mutes)
-      const muted = song.tracks.filter(t => t.muted && t.type !== "bus");
+    // Check for muted tracks (live mode only — .song files don't expose mute state reliably)
+    if (mode === "live") {
+      const muted = tracks.filter(t => (t as { muted?: boolean }).muted && t.type !== "bus");
       if (muted.length > 0) {
         warnings.push(`${muted.length} track(s) are muted: ${muted.map(t => t.name).join(", ")}`);
       } else {
-        ok.push("No accidentally muted tracks");
+        okChecks.push("No accidentally muted tracks");
       }
 
-      // Check for suspiciously high volumes (> +3 dB = value > 1.41 linear)
-      const hotTracks = song.tracks.filter(t => t.volume > 1.41);
+      const hotTracks = tracks.filter(t => ((t as { volume?: number }).volume ?? 0) > 1.41);
       if (hotTracks.length > 0) {
         warnings.push(`${hotTracks.length} track(s) have fader above +3 dB: ${hotTracks.map(t => t.name).join(", ")}`);
       }
-
-      // Check Master bus exists
-      const hasMaster = trackNames.some(n => n === "master");
-      if (!hasMaster) {
-        issues.push("No Master bus found – ensure your output is bussed correctly");
-      } else {
-        ok.push("Master bus present");
-      }
-
-      const totalTracks = song.tracks.length;
-      ok.push(`Total tracks: ${totalTracks}`);
-
-      const lines = [
-        `═══ Session Health Check ═══`,
-        `Tempo: ${song.tempo} BPM | Tracks: ${totalTracks} | Buses: ${busNames.length}`,
-        "",
-        issues.length  ? `Issues (${issues.length}):\n${issues.map(i => `  ✗ ${i}`).join("\n")}` : "",
-        warnings.length ? `Warnings (${warnings.length}):\n${warnings.map(w => `  ⚠ ${w}`).join("\n")}` : "",
-        ok.length       ? `OK (${ok.length}):\n${ok.map(o => `  ✓ ${o}`).join("\n")}` : "",
-        "",
-        issues.length === 0 && warnings.length === 0
-          ? "✓ No issues found. Session looks healthy."
-          : `Found ${issues.length} issue(s) and ${warnings.length} warning(s).`,
-      ].filter(Boolean).join("\n");
-
-      return { content: [{ type: "text", text: truncate(lines) }] };
-    } catch (e) {
-      return { content: [{ type: "text", text: `✗ Health check failed: ${e}` }], isError: true };
     }
+
+    // Check Master bus/output exists
+    // S1 uses "Main" as the output channel label, not "Master"
+    const hasMaster = trackNames.some(n => n === "master" || n === "main")
+      || busNames.some(n => /master|main/i.test(n));
+    if (!hasMaster) {
+      // Not an issue for S1 — the Main output always exists but isn't in the track list
+      // Only warn if there are no buses at all (indicates an empty or unusual project)
+      if (busNames.length === 0) {
+        warnings.push("No bus/group channels found — consider organizing tracks into groups");
+      }
+    } else {
+      okChecks.push("Master/Main output present");
+    }
+
+    const totalTracks = tracks.length;
+    okChecks.push(`Total tracks: ${totalTracks}`);
+
+    const modeLabel = mode === "live" ? "Live Bridge" : "File-Based (.song)";
+    const lines = [
+      `═══ Session Health Check (${modeLabel}) ═══`,
+      `Tempo: ${songTempo ?? "?"} BPM | Tracks: ${totalTracks} | Buses: ${busNames.length}`,
+      "",
+      issues.length  ? `Issues (${issues.length}):\n${issues.map(i => `  ✗ ${i}`).join("\n")}` : "",
+      warnings.length ? `Warnings (${warnings.length}):\n${warnings.map(w => `  ⚠ ${w}`).join("\n")}` : "",
+      okChecks.length ? `OK (${okChecks.length}):\n${okChecks.map(o => `  ✓ ${o}`).join("\n")}` : "",
+      arrangementNote,
+      "",
+      issues.length === 0 && warnings.length === 0
+        ? "✓ No issues found. Session looks healthy."
+        : `Found ${issues.length} issue(s) and ${warnings.length} warning(s).`,
+    ].filter(Boolean).join("\n");
+
+    return { content: [{ type: "text", text: truncate(lines) }] };
   });
 
   // ── session_list_mix_presets ──────────────────────────────────────────────

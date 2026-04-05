@@ -34,8 +34,13 @@ export function requireBridgeRead(action: string): string | null {
     return (
       `⚠ Studio One bridge is not ready – cannot ${action}.\n` +
       `State: ${runtime.state}; handshakeOk=${runtime.handshakeOk ? "true" : "false"}.\n` +
-      `${hint}\n` +
-      "Use s1_export_instruction to generate a manual instruction file instead."
+      `${hint}\n\n` +
+      "File-based alternatives (no bridge needed):\n" +
+      "  - session_kickstart with outputDir — generates full session plan + instructions\n" +
+      "  - s1_export_instruction — write any DAW command as a JSON instruction file\n" +
+      "  - s1_generate_track_plan — create a complete track setup document\n" +
+      "  - s1_generate_bus_template — generate Fornix bus routing template\n" +
+      "  - fornix_generate_production_package — full production package docs"
     );
   }
   return null;
