@@ -13,6 +13,7 @@ import { readRecentLogs } from "./logger.js";
 import { getStatus as getGitStatus } from "./checkpoint.js";
 import { getConfig } from "./workspace.js";
 import { getWatcherStatus } from "./song-watcher.js";
+import { getMcuBridgeState } from "./mcu-bridge.js";
 import { SERVER_VERSION } from "../constants.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -136,6 +137,19 @@ export const TOOL_MANIFEST = [
   { name: "s1_session_snapshot",         family: "Song Watcher",   readOnly: true  },
   { name: "s1_session_diff",             family: "Song Watcher",   readOnly: true  },
   { name: "s1_stop_watching",            family: "Song Watcher",   readOnly: false },
+
+  // MCU Bridge
+  { name: "mcu_list_ports",             family: "MCU Bridge",     readOnly: true  },
+  { name: "mcu_connect",                family: "MCU Bridge",     readOnly: false },
+  { name: "mcu_disconnect",             family: "MCU Bridge",     readOnly: false },
+  { name: "mcu_state",                  family: "MCU Bridge",     readOnly: true  },
+  { name: "mcu_transport",              family: "MCU Bridge",     readOnly: false },
+  { name: "mcu_fader",                  family: "MCU Bridge",     readOnly: false },
+  { name: "mcu_solo",                   family: "MCU Bridge",     readOnly: false },
+  { name: "mcu_mute",                   family: "MCU Bridge",     readOnly: false },
+  { name: "mcu_bank",                   family: "MCU Bridge",     readOnly: false },
+  { name: "mcu_save",                   family: "MCU Bridge",     readOnly: false },
+  { name: "mcu_undo",                   family: "MCU Bridge",     readOnly: false },
 ] as const;
 
 export function incrementToolCall(): void {
@@ -215,6 +229,7 @@ export function startStatusServer(): void {
           },
           git: gitStatus,
           songWatcher: getWatcherStatus(),
+          mcuBridge: getMcuBridgeState(),
           stats: {
             toolCallsThisSession: _toolCallCount,
             registeredTools: TOOL_MANIFEST.length,

@@ -134,6 +134,25 @@ The watcher debounces file changes (1.5s) and uses `awaitWriteFinish` to handle 
 
 **Note:** The watcher reads `.song` files — S1 may lock the file while saving. The parser silently retries on the next change event. For best results, ensure `allowedDirs` in `fornix-mcp.config.json` includes the S1 Songs directory.
 
+## MCU bridge (real-time bidirectional)
+
+`src/services/mcu-bridge.ts` connects to Studio One via a virtual MIDI port using the Mackie Control Universal protocol. S1 pushes state continuously — no polling needed. Requires loopMIDI (or similar virtual MIDI driver) + one-time S1 External Device setup.
+
+**Protocol layer** (`src/services/mcu-protocol.ts`): Pure parsing/building of MCU MIDI messages. No I/O — fully testable. Handles: Pitch Bend (faders), Note On/Off (buttons/LEDs), Channel Pressure (VU meters), Control Change (V-Pots, timecode), SysEx (LCD text).
+
+**What S1 pushes to us:** track names (7 chars via LCD SysEx), fader positions (14-bit), transport state (play/stop/record), solo/mute/arm per channel, VU meter levels, pan positions, timecode/bar position.
+
+**What we can send TO S1:** transport (play/stop/record/rewind/forward), fader moves, solo/mute toggles, bank switching, save, undo.
+
+Tools: `mcu_list_ports`, `mcu_connect`, `mcu_disconnect`, `mcu_state`, `mcu_transport`, `mcu_fader`, `mcu_solo`, `mcu_mute`, `mcu_bank`, `mcu_save`, `mcu_undo`.
+
+**Setup (one-time):**
+1. Install loopMIDI, create a port (e.g. "Fornix MCU")
+2. S1: Options → External Devices → Add → Mackie Control → select the loopMIDI port for both Receive/Send
+3. Call `mcu_connect` with the port name
+
+MCU bridge state is exposed at `/api/status` in the dashboard. Depends on `jzz` npm package for MIDI I/O.
+
 ## Key constraints
 
 - `s1BridgeEnabled` defaults to `false`. Verified impossible on Studio One 7 — do not enable.

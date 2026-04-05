@@ -30,6 +30,7 @@ import { registerAutomationTools }  from "./tools/studio-one/automation.js";
 import { registerWorkspaceProfileTools } from "./tools/workspace-profile.js";
 import { registerArrangementAnalysisTools } from "./tools/arrangement.js";
 import { registerSongWatcherTools } from "./tools/song-watcher.js";
+import { registerMcuBridgeTools } from "./tools/mcu-bridge.js";
 
 const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT ?? process.cwd();
 
@@ -100,6 +101,7 @@ async function main(): Promise<void> {
   registerWorkspaceProfileTools(server);
   registerArrangementAnalysisTools(server);
   registerSongWatcherTools(server);
+  registerMcuBridgeTools(server);
 
   const familyCount = new Set(TOOL_MANIFEST.map((tool) => tool.family)).size;
   process.stderr.write(`[init] ${TOOL_MANIFEST.length} tools ready across ${familyCount} families.\n`);

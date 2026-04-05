@@ -33,6 +33,7 @@ import { registerAutomationTools }        from "../../dist/tools/studio-one/auto
 import { registerWorkspaceProfileTools } from "../../dist/tools/workspace-profile.js";
 import { registerArrangementAnalysisTools } from "../../dist/tools/arrangement.js";
 import { registerSongWatcherTools } from "../../dist/tools/song-watcher.js";
+import { registerMcuBridgeTools } from "../../dist/tools/mcu-bridge.js";
 
 function collectRegisteredNames() {
   const names = [];
@@ -58,6 +59,7 @@ function collectRegisteredNames() {
   registerWorkspaceProfileTools(fakeServer);
   registerArrangementAnalysisTools(fakeServer);
   registerSongWatcherTools(fakeServer);
+  registerMcuBridgeTools(fakeServer);
 
   return names;
 }
