@@ -291,7 +291,8 @@ export function registerTransportTools(server: McpServer): void {
           lines.push("Markers:", ...result.markers.map(m => `  - ${m.name} @ bar ${m.positionBars}`), "");
         }
 
-        lines.push(`Parse notes: ${result.parseNotes.join("; ")}`);
+        const notes = result.parseNotes.map(n => n.length > 120 ? n.slice(0, 120) + "…" : n);
+        lines.push(`Parse: ${notes[0] ?? "ok"}`);
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } catch (e) {

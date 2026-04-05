@@ -440,7 +440,8 @@ export function tryParseSongFile(filePath: string): SongFileResult {
     notes.push("Detected ZIP archive (Studio One .song format)");
 
     const entries = findZipEntries(buf);
-    notes.push(`Found ${entries.length} ZIP entries: ${entries.map((e) => e.filename).join(", ")}`);
+    const xmlNames = entries.filter(e => e.filename.endsWith(".xml")).map(e => e.filename);
+    notes.push(`Found ${entries.length} ZIP entries (${xmlNames.length} XML: ${xmlNames.join(", ")})`);
 
     // Look for the main Song XML — prioritize Song/song.xml (Studio One standard)
     const xmlCandidates = entries.filter((e) =>

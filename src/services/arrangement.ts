@@ -173,7 +173,7 @@ export function analyzeArrangement(
     `Sections: ${summary.sections.length}`,
     `Total length: ${summary.totalLengthBars} bars (${formatTime(summary.totalLengthSeconds)})`,
     `Target length: ${formatTime(targetLengthSeconds)}`,
-    `Tracks: ${summary.trackList.length > 0 ? summary.trackList.join(", ") : "(none detected)"}`,
+    `Tracks: ${summary.trackList.length || 0}`,
   ].join(" | ");
 
   return {
