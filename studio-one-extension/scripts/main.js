@@ -1,408 +1,326 @@
-/* Fornix MCP Bridge — Studio One 7 Extension (Stage 2 IO Probe)
+/* Fornix MCP Bridge — Studio One 7 Extension (Stage 3e Final Probe)
  *
- * Purpose: map the full Host.IO.File API surface.
- * Stage 1 confirmed: Host.IO.File exists, has exists/remove/rename/path/toString.
- * Stage 2 answers: can we READ and WRITE files?
+ * CONFIRMED from Stage 3d:
+ *   - Host.IO.File: exists/remove/rename/path/toString ONLY
+ *   - ALL read methods: undefined (14 checked)
+ *   - ALL write methods: undefined (11 checked)
+ *   - ALL Host.IO siblings: undefined
+ *   - CCL.JS has rich API: getApplication, getWindowManager, etc.
  *
- * Format: IComponent / FrameworkService (createInstance → initialize).
- * Runs inside Studio One's scripting engine — NOT Node.js.
+ * Stage 3e PURPOSE: Deep probe CCL.JS.getApplication() and
+ *   CCL.JS.getWindowManager() — last possible path to file I/O
+ *   or song/document access from inside the extension.
+ *
+ * Format: IComponent / FrameworkService (createInstance -> initialize).
+ * NO modern JS: no const/let, no arrow functions, no template literals.
  */
 
 include_file("resource://{main}/sdk/cclapp.js");
 
-var PROBE_VERSION = 10;
+var PROBE_VERSION = 24;
 
 function log(msg) {
   Host.Console.writeLine("[FornixMCPBridge] " + msg);
 }
 
-// ─── Safe property enumerator ──────────────────────────────────────────────
-
-function probeObject(obj, label, maxDepth) {
-  if (typeof maxDepth === "undefined") maxDepth = 1;
-  if (!obj || maxDepth < 0) return;
-
+function safeEnum(obj, label) {
   var keys = [];
   try {
     for (var k in obj) {
       keys.push(k);
     }
   } catch (e) {
-    log(label + " — cannot enumerate: " + e);
+    log("  " + label + " — cannot enumerate: " + e);
     return;
   }
-
-  for (var i = 0; i < keys.length; i++) {
-    var key = keys[i];
-    try {
-      var val = obj[key];
-      var t = typeof val;
-      if (t === "function") {
-        log("  " + label + "." + key + " = function");
-      } else if (t === "object" && val !== null) {
-        log("  " + label + "." + key + " = object");
-        if (maxDepth > 0) {
-          probeObject(val, label + "." + key, maxDepth - 1);
-        }
-      } else {
-        log("  " + label + "." + key + " = " + t + " = " + String(val));
-      }
-    } catch (e2) {
-      log("  " + label + "." + key + " — access error: " + e2);
-    }
-  }
-
   if (keys.length === 0) {
-    log("  " + label + " — no enumerable keys (try Object methods below)");
-  }
-}
-
-// ─── Host.IO probe ────────────────────────────────────────────────────────
-
-function probeHostIO() {
-  log("--- Host.IO probe ---");
-
-  if (typeof Host === "undefined" || !Host) {
-    log("Host is undefined");
-    return;
-  }
-
-  if (typeof Host.IO === "undefined") {
-    log("Host.IO is undefined");
-    return;
-  }
-
-  log("Host.IO = " + typeof Host.IO);
-  probeObject(Host.IO, "Host.IO", 0);
-}
-
-// ─── Host.IO.File probe ──────────────────────────────────────────────────
-
-function probeIOFile() {
-  log("--- Host.IO.File probe ---");
-
-  if (typeof Host === "undefined" || !Host || !Host.IO) {
-    log("Host.IO unavailable — skipping");
-    return;
-  }
-
-  // Test constructor with a known path
-  var testPath = "C:/Users/Public/fornix-io-probe-test.txt";
-  var f;
-  try {
-    f = new Host.IO.File(testPath);
-    log("Host.IO.File(path) = " + typeof f + " " + f);
-  } catch (e) {
-    log("Host.IO.File constructor failed: " + e);
-    return;
-  }
-
-  // Enumerate all properties/methods
-  probeObject(f, "f", 1);
-
-  // Test specific methods
-  log("--- IO.File method tests ---");
-
-  // exists
-  try {
-    var exists = f.exists();
-    log("f.exists() = " + exists);
-  } catch (e) {
-    log("f.exists() error: " + e);
-  }
-
-  // toString
-  try {
-    log("f.toString() = " + f.toString());
-  } catch (e) {
-    log("f.toString() error: " + e);
-  }
-
-  // path
-  try {
-    log("f.path = " + typeof f.path);
-    if (f.path) {
-      log("f.path.toString() = " + f.path.toString());
-      probeObject(f.path, "f.path", 0);
+    log("  " + label + " — no enumerable keys");
+  } else {
+    log("  " + label + " — " + keys.length + " keys:");
+    for (var i = 0; i < keys.length; i++) {
+      try {
+        var val = obj[keys[i]];
+        log("    ." + keys[i] + " = " + typeof val);
+      } catch (e2) {
+        log("    ." + keys[i] + " — error");
+      }
     }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PROBE 1: CCL.JS.getApplication() — deep scan
+// ═══════════════════════════════════════════════════════════════════════════
+
+function probe1_getApplication() {
+  log("=== PROBE 1: CCL.JS.getApplication() ===");
+
+  var app;
+  try {
+    app = CCL.JS.getApplication();
+    log("getApplication() = " + typeof app + " (" + app + ")");
   } catch (e) {
-    log("f.path error: " + e);
+    log("getApplication() error: " + e);
+    return;
   }
 
-  // Test read-related methods
-  log("--- IO.File READ probes ---");
-  var readMethods = [
-    "read", "readAll", "readLine", "readLines",
-    "getText", "getContent", "getContents",
-    "text", "content", "contents", "data",
-    "open", "openRead", "openText",
-    "createReader", "getReader",
-    "inputStream", "getInputStream"
+  if (!app) { log("app is null/undefined"); return; }
+
+  // Enumerate all properties
+  safeEnum(app, "app");
+
+  // Check for document/song/file methods
+  log("--- app: document/song APIs ---");
+  try { log("  app.getDocument = " + typeof app.getDocument); } catch (e) { log("  — crash"); }
+  try { log("  app.getActiveDocument = " + typeof app.getActiveDocument); } catch (e) { log("  — crash"); }
+  try { log("  app.getSong = " + typeof app.getSong); } catch (e) { log("  — crash"); }
+  try { log("  app.getActiveSong = " + typeof app.getActiveSong); } catch (e) { log("  — crash"); }
+  try { log("  app.getProject = " + typeof app.getProject); } catch (e) { log("  — crash"); }
+  try { log("  app.getActiveProject = " + typeof app.getActiveProject); } catch (e) { log("  — crash"); }
+  try { log("  app.documents = " + typeof app.documents); } catch (e) { log("  — crash"); }
+  try { log("  app.song = " + typeof app.song); } catch (e) { log("  — crash"); }
+  try { log("  app.project = " + typeof app.project); } catch (e) { log("  — crash"); }
+
+  // Check for file/IO methods
+  log("--- app: file/IO APIs ---");
+  try { log("  app.openFile = " + typeof app.openFile); } catch (e) { log("  — crash"); }
+  try { log("  app.saveFile = " + typeof app.saveFile); } catch (e) { log("  — crash"); }
+  try { log("  app.readFile = " + typeof app.readFile); } catch (e) { log("  — crash"); }
+  try { log("  app.writeFile = " + typeof app.writeFile); } catch (e) { log("  — crash"); }
+  try { log("  app.exportFile = " + typeof app.exportFile); } catch (e) { log("  — crash"); }
+  try { log("  app.getPath = " + typeof app.getPath); } catch (e) { log("  — crash"); }
+  try { log("  app.getUserPath = " + typeof app.getUserPath); } catch (e) { log("  — crash"); }
+  try { log("  app.getDataPath = " + typeof app.getDataPath); } catch (e) { log("  — crash"); }
+
+  // Check for transport/mixer/track methods
+  log("--- app: transport/mixer ---");
+  try { log("  app.getTransport = " + typeof app.getTransport); } catch (e) { log("  — crash"); }
+  try { log("  app.getMixer = " + typeof app.getMixer); } catch (e) { log("  — crash"); }
+  try { log("  app.getTracks = " + typeof app.getTracks); } catch (e) { log("  — crash"); }
+  try { log("  app.getMarkers = " + typeof app.getMarkers); } catch (e) { log("  — crash"); }
+  try { log("  app.tempo = " + typeof app.tempo); } catch (e) { log("  — crash"); }
+  try { log("  app.sampleRate = " + typeof app.sampleRate); } catch (e) { log("  — crash"); }
+
+  // Check for command/action methods
+  log("--- app: commands/actions ---");
+  try { log("  app.executeCommand = " + typeof app.executeCommand); } catch (e) { log("  — crash"); }
+  try { log("  app.sendCommand = " + typeof app.sendCommand); } catch (e) { log("  — crash"); }
+  try { log("  app.runMacro = " + typeof app.runMacro); } catch (e) { log("  — crash"); }
+  try { log("  app.notify = " + typeof app.notify); } catch (e) { log("  — crash"); }
+
+  // Check for extension/plugin APIs
+  log("--- app: extension APIs ---");
+  try { log("  app.getContext = " + typeof app.getContext); } catch (e) { log("  — crash"); }
+  try { log("  app.getHost = " + typeof app.getHost); } catch (e) { log("  — crash"); }
+  try { log("  app.getServices = " + typeof app.getServices); } catch (e) { log("  — crash"); }
+  try { log("  app.getExtension = " + typeof app.getExtension); } catch (e) { log("  — crash"); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PROBE 2: CCL.JS.getWindowManager() — deep scan
+// ═══════════════════════════════════════════════════════════════════════════
+
+function probe2_getWindowManager() {
+  log("=== PROBE 2: CCL.JS.getWindowManager() ===");
+
+  var wm;
+  try {
+    wm = CCL.JS.getWindowManager();
+    log("getWindowManager() = " + typeof wm + " (" + wm + ")");
+  } catch (e) {
+    log("getWindowManager() error: " + e);
+    return;
+  }
+
+  if (!wm) { log("wm is null/undefined"); return; }
+
+  safeEnum(wm, "wm");
+
+  // Check for useful methods
+  try { log("  wm.getWindows = " + typeof wm.getWindows); } catch (e) { log("  — crash"); }
+  try { log("  wm.getActiveWindow = " + typeof wm.getActiveWindow); } catch (e) { log("  — crash"); }
+  try { log("  wm.getMainWindow = " + typeof wm.getMainWindow); } catch (e) { log("  — crash"); }
+  try { log("  wm.openWindow = " + typeof wm.openWindow); } catch (e) { log("  — crash"); }
+  try { log("  wm.showDialog = " + typeof wm.showDialog); } catch (e) { log("  — crash"); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PROBE 3: CCL.JS remaining methods — EndLine, ResourceUrl, LegalFileName
+// ═══════════════════════════════════════════════════════════════════════════
+
+function probe3_CCLJSMethods() {
+  log("=== PROBE 3: CCL.JS methods ===");
+
+  // EndLine
+  try {
+    var el = CCL.JS.EndLine();
+    log("  EndLine() = " + typeof el + " repr=" + JSON.stringify(el));
+  } catch (e) {
+    log("  EndLine() error: " + e);
+  }
+
+  // ResourceUrl
+  try {
+    var ru = CCL.JS.ResourceUrl("test.txt");
+    log("  ResourceUrl('test.txt') = " + typeof ru + " (" + ru + ")");
+  } catch (e) {
+    log("  ResourceUrl() error: " + e);
+  }
+
+  // LegalFileName
+  try {
+    var lfn = CCL.JS.LegalFileName("test/file:name.txt");
+    log("  LegalFileName('test/file:name.txt') = " + typeof lfn + " (" + lfn + ")");
+  } catch (e) {
+    log("  LegalFileName() error: " + e);
+  }
+
+  // Columns
+  try {
+    log("  Columns = " + typeof CCL.JS.Columns);
+    safeEnum(CCL.JS.Columns, "Columns");
+  } catch (e) {
+    log("  Columns error: " + e);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PROBE 4: If getApplication returns an app, probe for song document
+// ═══════════════════════════════════════════════════════════════════════════
+
+function probe4_AppDocument() {
+  log("=== PROBE 4: App document chain ===");
+
+  var app;
+  try { app = CCL.JS.getApplication(); } catch (e) { log("No app: " + e); return; }
+  if (!app) { log("app is null"); return; }
+
+  // If any document/song getter exists, call it and probe the result
+  var doc;
+
+  try {
+    if (typeof app.getDocument === "function") {
+      doc = app.getDocument();
+      log("  app.getDocument() = " + typeof doc + " (" + doc + ")");
+      if (doc) safeEnum(doc, "doc");
+    }
+  } catch (e) { log("  getDocument error: " + e); }
+
+  try {
+    if (typeof app.getActiveDocument === "function") {
+      doc = app.getActiveDocument();
+      log("  app.getActiveDocument() = " + typeof doc + " (" + doc + ")");
+      if (doc) safeEnum(doc, "activeDoc");
+    }
+  } catch (e) { log("  getActiveDocument error: " + e); }
+
+  try {
+    if (typeof app.getSong === "function") {
+      var song = app.getSong();
+      log("  app.getSong() = " + typeof song + " (" + song + ")");
+      if (song) {
+        safeEnum(song, "song");
+        try { log("  song.title = " + song.title); } catch (e2) { /* skip */ }
+        try { log("  song.tempo = " + song.tempo); } catch (e2) { /* skip */ }
+        try { log("  song.path = " + song.path); } catch (e2) { /* skip */ }
+      }
+    }
+  } catch (e) { log("  getSong error: " + e); }
+
+  try {
+    if (typeof app.getActiveSong === "function") {
+      var asong = app.getActiveSong();
+      log("  app.getActiveSong() = " + typeof asong + " (" + asong + ")");
+      if (asong) safeEnum(asong, "activeSong");
+    }
+  } catch (e) { log("  getActiveSong error: " + e); }
+
+  // Try property access too
+  try {
+    if (typeof app.document !== "undefined") {
+      log("  app.document = " + typeof app.document);
+      if (app.document) safeEnum(app.document, "app.document");
+    }
+  } catch (e) { log("  app.document error: " + e); }
+
+  try {
+    if (typeof app.song !== "undefined") {
+      log("  app.song = " + typeof app.song);
+      if (app.song) safeEnum(app.song, "app.song");
+    }
+  } catch (e) { log("  app.song error: " + e); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PROBE 5: Host.GUI.Commands.interpretCommand test
+// ═══════════════════════════════════════════════════════════════════════════
+
+function probe5_Commands() {
+  log("=== PROBE 5: interpretCommand tests ===");
+
+  // Try some known S1 command strings (read-only, harmless)
+  var commands = [
+    "Transport/Tempo",
+    "View/Console",
+    "Edit/Select All",
+    "Song/Song Information"
   ];
 
-  for (var i = 0; i < readMethods.length; i++) {
+  for (var i = 0; i < commands.length; i++) {
     try {
-      var method = readMethods[i];
-      var val = f[method];
-      if (typeof val !== "undefined") {
-        log("f." + method + " = " + typeof val);
-        if (typeof val === "function") {
-          log("  EXISTS — trying f." + method + "()...");
-          try {
-            var result = val.call(f);
-            log("  f." + method + "() returned: " + typeof result + " = " + String(result).substring(0, 200));
-          } catch (callErr) {
-            log("  f." + method + "() error: " + callErr);
-          }
-        }
-      }
+      var result = Host.GUI.Commands.interpretCommand(commands[i]);
+      log("  '" + commands[i] + "' = " + typeof result + " (" + result + ")");
     } catch (e) {
-      log("f." + readMethods[i] + " access error: " + e);
-    }
-  }
-
-  // Test write-related methods
-  log("--- IO.File WRITE probes ---");
-  var writeMethods = [
-    "write", "writeAll", "writeLine",
-    "setText", "setContent", "setContents",
-    "save", "saveAs",
-    "openWrite", "openText",
-    "createWriter", "getWriter",
-    "outputStream", "getOutputStream",
-    "create", "append"
-  ];
-
-  for (var j = 0; j < writeMethods.length; j++) {
-    try {
-      var wmethod = writeMethods[j];
-      var wval = f[wmethod];
-      if (typeof wval !== "undefined") {
-        log("f." + wmethod + " = " + typeof wval);
-      }
-    } catch (e) {
-      log("f." + writeMethods[j] + " access error: " + e);
+      log("  '" + commands[i] + "' error: " + e);
     }
   }
 }
 
-// ─── Host.IO.TextFile / BinaryFile / Stream probes ───────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// PROBE 6: Remaining Host probes from 3c that we need to confirm
+// ═══════════════════════════════════════════════════════════════════════════
 
-function probeIOStreams() {
-  log("--- Host.IO stream classes probe ---");
+function probe6_HostScan() {
+  log("=== PROBE 6: Host top-level ===");
 
-  if (typeof Host === "undefined" || !Host || !Host.IO) return;
-
-  var classes = [
-    "TextFile", "BinaryFile", "DataStream", "TextStream",
-    "InputStream", "OutputStream", "FileStream",
-    "Reader", "Writer", "BufferedReader", "BufferedWriter",
-    "StreamReader", "StreamWriter"
-  ];
-
-  for (var i = 0; i < classes.length; i++) {
-    try {
-      var cls = Host.IO[classes[i]];
-      if (typeof cls !== "undefined") {
-        log("Host.IO." + classes[i] + " = " + typeof cls);
-        if (typeof cls === "function") {
-          log("  Found constructor — trying new Host.IO." + classes[i] + "()...");
-          try {
-            var inst = new cls("C:/Users/Public/fornix-stream-test.txt");
-            log("  Instance created: " + typeof inst);
-            probeObject(inst, "  Host.IO." + classes[i], 0);
-          } catch (e2) {
-            log("  Constructor error: " + e2);
-          }
-        }
-      }
-    } catch (e) {
-      log("Host.IO." + classes[i] + " error: " + e);
-    }
-  }
+  try { log("  Host.Application = " + typeof Host.Application); } catch (e) { log("  Host.Application — crash"); }
+  try { log("  Host.Document = " + typeof Host.Document); } catch (e) { log("  Host.Document — crash"); }
+  try { log("  Host.Editor = " + typeof Host.Editor); } catch (e) { log("  Host.Editor — crash"); }
+  try { log("  Host.Preferences = " + typeof Host.Preferences); } catch (e) { log("  Host.Preferences — crash"); }
+  try { log("  Host.Environment = " + typeof Host.Environment); } catch (e) { log("  Host.Environment — crash"); }
+  try { log("  Host.System = " + typeof Host.System); } catch (e) { log("  Host.System — crash"); }
+  try { log("  Host.Storage = " + typeof Host.Storage); } catch (e) { log("  Host.Storage — crash"); }
+  try { log("  Host.Scripting = " + typeof Host.Scripting); } catch (e) { log("  Host.Scripting — crash"); }
+  try { log("  Host.Network = " + typeof Host.Network); } catch (e) { log("  Host.Network — crash"); }
+  try { log("  Host.WebSocket = " + typeof Host.WebSocket); } catch (e) { log("  Host.WebSocket — crash"); }
+  try { log("  Host.FileSystem = " + typeof Host.FileSystem); } catch (e) { log("  Host.FileSystem — crash"); }
+  try { log("  Host.Process = " + typeof Host.Process); } catch (e) { log("  Host.Process — crash"); }
+  try { log("  Host.Shell = " + typeof Host.Shell); } catch (e) { log("  Host.Shell — crash"); }
+  try { log("  Host.Timer = " + typeof Host.Timer); } catch (e) { log("  Host.Timer — crash"); }
+  try { log("  Host.Clipboard = " + typeof Host.Clipboard); } catch (e) { log("  Host.Clipboard — crash"); }
 }
 
-// ─── Host.Url probe ──────────────────────────────────────────────────────
-
-function probeHostUrl() {
-  log("--- Host.Url probe ---");
-
-  if (typeof Host === "undefined" || !Host) return;
-  if (typeof Host.Url === "undefined") {
-    log("Host.Url undefined");
-    return;
-  }
-
-  try {
-    var u = new Host.Url("C:/Users/Public/test.json");
-    log("Host.Url = " + typeof u + " " + u);
-    probeObject(u, "url", 0);
-  } catch (e) {
-    log("Host.Url error: " + e);
-  }
-}
-
-// ─── Write test: try every known method ──────────────────────────────────
-
-function probeWriteAttempt() {
-  log("--- WRITE ATTEMPT ---");
-
-  if (typeof Host === "undefined" || !Host || !Host.IO) return;
-
-  var testPath = "C:/Users/Public/fornix-write-test.txt";
-  var testContent = "Fornix IO probe write test " + new Date().getTime();
-
-  // Method 1: IO.File constructor + write
-  try {
-    var f = new Host.IO.File(testPath);
-    if (typeof f.write === "function") {
-      f.write(testContent);
-      log("WRITE SUCCESS via f.write()");
-      // Verify by checking exists
-      var f2 = new Host.IO.File(testPath);
-      log("After write, f2.exists() = " + f2.exists());
-      return;
-    }
-  } catch (e) {
-    log("f.write() failed: " + e);
-  }
-
-  // Method 2: TextFile
-  try {
-    if (Host.IO.TextFile) {
-      var tf = new Host.IO.TextFile(testPath);
-      if (typeof tf.open === "function") {
-        tf.open("write");
-        tf.write(testContent);
-        tf.close();
-        log("WRITE SUCCESS via TextFile");
-        return;
-      }
-    }
-  } catch (e) {
-    log("TextFile write failed: " + e);
-  }
-
-  // Method 3: openForWriting pattern
-  try {
-    var f3 = new Host.IO.File(testPath);
-    if (typeof f3.open === "function") {
-      var stream = f3.open("w");
-      if (stream && typeof stream.write === "function") {
-        stream.write(testContent);
-        stream.close();
-        log("WRITE SUCCESS via f.open('w')");
-        return;
-      }
-    }
-  } catch (e) {
-    log("f.open('w') write failed: " + e);
-  }
-
-  log("All write methods exhausted — write NOT possible with current API surface");
-}
-
-// ─── Read test: if a file exists, try to read it ─────────────────────────
-
-function probeReadAttempt() {
-  log("--- READ ATTEMPT ---");
-
-  if (typeof Host === "undefined" || !Host || !Host.IO) return;
-
-  // Try to read the metainfo.xml that we know exists in the extension dir
-  var paths = [
-    "C:/Users/Public/fornix-write-test.txt",
-    "C:/Users/Public/desktop.ini"
-  ];
-
-  for (var p = 0; p < paths.length; p++) {
-    var testPath = paths[p];
-    try {
-      var f = new Host.IO.File(testPath);
-      if (!f.exists()) {
-        log("Read test file not found: " + testPath);
-        continue;
-      }
-
-      log("Read test file exists: " + testPath);
-
-      // Try read methods
-      if (typeof f.read === "function") {
-        try {
-          var result = f.read();
-          log("READ SUCCESS via f.read(): " + typeof result + " = " + String(result).substring(0, 200));
-          return;
-        } catch (e) {
-          log("f.read() error: " + e);
-        }
-      }
-
-      if (typeof f.readAll === "function") {
-        try {
-          var result2 = f.readAll();
-          log("READ SUCCESS via f.readAll(): " + String(result2).substring(0, 200));
-          return;
-        } catch (e) {
-          log("f.readAll() error: " + e);
-        }
-      }
-
-      if (typeof f.getText === "function") {
-        try {
-          var result3 = f.getText();
-          log("READ SUCCESS via f.getText(): " + String(result3).substring(0, 200));
-          return;
-        } catch (e) {
-          log("f.getText() error: " + e);
-        }
-      }
-
-      if (typeof f.open === "function") {
-        try {
-          var stream = f.open("r");
-          if (stream && typeof stream.read === "function") {
-            var data = stream.read();
-            stream.close();
-            log("READ SUCCESS via f.open('r').read(): " + String(data).substring(0, 200));
-            return;
-          }
-        } catch (e) {
-          log("f.open('r') error: " + e);
-        }
-      }
-
-      // Try property access
-      if (typeof f.text !== "undefined") {
-        log("f.text = " + typeof f.text + " = " + String(f.text).substring(0, 200));
-      }
-      if (typeof f.content !== "undefined") {
-        log("f.content = " + typeof f.content + " = " + String(f.content).substring(0, 200));
-      }
-
-    } catch (e) {
-      log("Read attempt error for " + testPath + ": " + e);
-    }
-  }
-
-  log("All read methods exhausted — read NOT possible with current API surface");
-}
-
-// ─── IComponent service ──────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// IComponent service
+// ═══════════════════════════════════════════════════════════════════════════
 
 function FornixMCPBridgeService() {
   this.interfaces = [Host.Interfaces.IComponent];
 
   this.initialize = function() {
-    log("initialize (v" + PROBE_VERSION + ")");
+    log("=== Fornix MCP Stage 3e Probe v" + PROBE_VERSION + " ===");
+    log("Focus: CCL.JS.getApplication() and getWindowManager()");
+    log("");
 
-    try { probeHostIO(); } catch (e) { log("probeHostIO error: " + e); }
-    try { probeIOFile(); } catch (e) { log("probeIOFile error: " + e); }
-    try { probeIOStreams(); } catch (e) { log("probeIOStreams error: " + e); }
-    try { probeHostUrl(); } catch (e) { log("probeHostUrl error: " + e); }
-    try { probeWriteAttempt(); } catch (e) { log("probeWriteAttempt error: " + e); }
-    try { probeReadAttempt(); } catch (e) { log("probeReadAttempt error: " + e); }
+    try { probe1_getApplication(); } catch (e) { log("PROBE 1 FATAL: " + e); }
+    try { probe2_getWindowManager(); } catch (e) { log("PROBE 2 FATAL: " + e); }
+    try { probe3_CCLJSMethods(); } catch (e) { log("PROBE 3 FATAL: " + e); }
+    try { probe4_AppDocument(); } catch (e) { log("PROBE 4 FATAL: " + e); }
+    try { probe5_Commands(); } catch (e) { log("PROBE 5 FATAL: " + e); }
+    try { probe6_HostScan(); } catch (e) { log("PROBE 6 FATAL: " + e); }
 
-    log("=== Stage 2 IO probe complete ===");
+    log("");
+    log("=== Stage 3e probe complete ===");
     return Host.Results.kResultOk;
   };
 
@@ -411,8 +329,6 @@ function FornixMCPBridgeService() {
     return Host.Results.kResultOk;
   };
 }
-
-// ─── Class factory entry point ───────────────────────────────────────────
 
 function createInstance(args) {
   __init(args);
