@@ -2077,3 +2077,92 @@ export function regenerateProductionPackageSection(input: RegeneratePackageSecti
     packageConsistencySummaryAfterUpdate: packageSummary.packageConsistencySummary,
   };
 }
+
+// ─── Batch regeneration ─────────────────────────────────────────────────────────
+
+export const PACKAGE_BATCH_REGEN_TOOL = "fornix_batch_regenerate_package";
+
+export interface BatchRegenerateInput extends Partial<Omit<ProductionPackageInput, "outputDir">> {
+  outputDir?: string;
+  packagePath?: string;
+  trackSlug?: string;
+  sections?: PackageSectionId[];
+}
+
+export interface BatchRegenerateResult {
+  packageRoot: string;
+  regeneratedSections: PackageSectionId[];
+  skippedSections: PackageSectionId[];
+  updatedFiles: string[];
+  metadataPath: string;
+  metadata: ProductionPackageMetadata;
+  packageSummary: ProductionPackageSummary;
+  changedProfileFields: PackageProfileFieldChange[];
+}
+
+export function batchRegeneratePackage(input: BatchRegenerateInput): BatchRegenerateResult {
+  const packageRoot = resolvePackageRoot(input);
+  const summary = getPackageSummary({ packagePath: packageRoot });
+
+  if (!summary.metadata) {
+    throw new Error("Package metadata is missing. Generate the package first so batch regeneration can stay honest.");
+  }
+
+  const outputDir = outputDirFromPackageRoot(packageRoot);
+  const mergedInput = mergeInputOverMetadata(summary.metadata, input, outputDir);
+  const plan = buildPackageUpdatePlan(summary.metadata, mergedInput);
+
+  // If caller specified sections, use those; otherwise use recommended from the plan.
+  const targetSections = input.sections?.length
+    ? input.sections.map(ensureSectionId)
+    : plan.recommendedSections.length > 0
+      ? plan.recommendedSections
+      : ALL_SECTION_IDS;
+
+  const regeneratedSections: PackageSectionId[] = [];
+  const skippedSections: PackageSectionId[] = [];
+  const updatedFiles: string[] = [];
+  const generatedAt = new Date().toISOString();
+  const mixActions = buildMixActions(mergedInput);
+
+  let currentMetadata = summary.metadata;
+
+  for (const section of targetSections) {
+    const layoutKey = SECTION_LAYOUT_BY_ID[section].key;
+    const filePath = getDocumentPath(packageRoot, layoutKey);
+
+    try {
+      const markdown = renderSectionMarkdown(section, mergedInput, generatedAt, mixActions);
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, markdown, "utf8");
+
+      currentMetadata = createMetadata(
+        mergedInput,
+        currentMetadata.trackSlug,
+        generatedAt,
+        PACKAGE_BATCH_REGEN_TOOL,
+        currentMetadata,
+        section,
+      );
+
+      regeneratedSections.push(section);
+      updatedFiles.push(filePath);
+    } catch {
+      skippedSections.push(section);
+    }
+  }
+
+  const metadataPath = getMetadataPath(packageRoot);
+  writeMetadataFile(metadataPath, currentMetadata);
+
+  return {
+    packageRoot,
+    regeneratedSections,
+    skippedSections,
+    updatedFiles,
+    metadataPath,
+    metadata: currentMetadata,
+    packageSummary: getPackageSummary({ packagePath: packageRoot }),
+    changedProfileFields: plan.changedProfileFields,
+  };
+}

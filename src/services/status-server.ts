@@ -106,6 +106,9 @@ export const TOOL_MANIFEST = [
   { name: "fornix_regenerate_package_section",  family: "Production Package", readOnly: false },
   { name: "fornix_get_package_summary",         family: "Production Package", readOnly: true  },
   { name: "fornix_generate_mix_actions",        family: "Mix",                readOnly: false },
+  { name: "fornix_batch_regenerate_package",   family: "Production Package", readOnly: false },
+  { name: "fornix_list_templates",             family: "Template Library",   readOnly: true  },
+  { name: "fornix_get_template",               family: "Template Library",   readOnly: true  },
 
   // Workspace
   { name: "fornix_create_workspace",          family: "Workspace",          readOnly: false },
