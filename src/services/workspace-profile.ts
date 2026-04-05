@@ -11,9 +11,12 @@ import {
   type EnergyProfile,
   type LeadStyle,
   type ProductionPackageInput,
+  type ProductionPackageResult,
   type StyleVariant,
   slugifyTrackName,
+  writeProductionPackage,
 } from "./production-package.js";
+import { type ProductionTemplate, getTemplate } from "./template-library.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -268,6 +271,111 @@ export function getWorkspaceSummary(outputDir: string): WorkspaceSummary {
       overrideCount: t.overrides ? Object.keys(t.overrides).length : 0,
     })),
   };
+}
+
+// ─── Workspace → Package pipeline ───────────────────────────────────────────────
+
+export interface GenerateWorkspacePackagesResult {
+  workspaceName: string;
+  generated: Array<{ trackName: string; trackSlug: string; packageRoot: string }>;
+  skipped: Array<{ trackName: string; trackSlug: string; reason: string }>;
+  alreadyGenerated: Array<{ trackName: string; trackSlug: string }>;
+}
+
+export function generateWorkspacePackages(
+  outputDir: string,
+  options?: { regenerate?: boolean },
+): GenerateWorkspacePackagesResult {
+  const workspace = readWorkspace(outputDir);
+
+  if (workspace.tracks.length === 0) {
+    throw new Error(`Workspace "${workspace.name}" has no tracks. Add tracks first.`);
+  }
+
+  const generated: GenerateWorkspacePackagesResult["generated"] = [];
+  const skipped: GenerateWorkspacePackagesResult["skipped"] = [];
+  const alreadyGenerated: GenerateWorkspacePackagesResult["alreadyGenerated"] = [];
+
+  for (const track of workspace.tracks) {
+    if (track.packageGenerated && !options?.regenerate) {
+      alreadyGenerated.push({ trackName: track.trackName, trackSlug: track.trackSlug });
+      continue;
+    }
+
+    try {
+      const input = resolveTrackInput(workspace, track);
+      input.outputDir = outputDir;
+      const result = writeProductionPackage(input);
+
+      generated.push({
+        trackName: track.trackName,
+        trackSlug: track.trackSlug,
+        packageRoot: result.packageRoot,
+      });
+
+      markTrackGenerated(outputDir, track.trackSlug);
+    } catch (e) {
+      skipped.push({
+        trackName: track.trackName,
+        trackSlug: track.trackSlug,
+        reason: String(e),
+      });
+    }
+  }
+
+  return {
+    workspaceName: workspace.name,
+    generated,
+    skipped,
+    alreadyGenerated,
+  };
+}
+
+// ─── Template → Workspace ───────────────────────────────────────────────────────
+
+export interface CreateWorkspaceFromTemplateInput {
+  outputDir: string;
+  name: string;
+  templateId: string;
+  artistName?: string;
+  bpmRange?: BpmRange;
+}
+
+export function createWorkspaceFromTemplate(input: CreateWorkspaceFromTemplateInput): WorkspaceProfile {
+  const template = getTemplate(input.templateId);
+  if (!template) {
+    throw new Error(`Template "${input.templateId}" not found`);
+  }
+
+  const defaults: WorkspaceStyleDefaults = {
+    styleVariant: template.styleVariant,
+    leadStyle: template.leadStyle,
+    dropStrategy: template.dropStrategy,
+    energyProfile: template.energyProfile,
+    keySignature: template.keySignature,
+    targetBars: template.targetBars,
+    substyle: template.substyle,
+    kickStyle: template.kickStyle,
+    antiClimaxStyle: template.antiClimaxStyle,
+    arrangementFocus: template.arrangementFocus,
+    vocalMode: template.vocalMode,
+    djUtilityPriority: template.djUtilityPriority,
+    cinematicIntensity: template.cinematicIntensity,
+    aggressionLevel: template.aggressionLevel,
+    emotionalTone: template.emotionalTone,
+    mood: template.mood,
+    focus: template.focus,
+    mixConcerns: [...template.mixConcerns],
+    referenceNotes: [...template.referenceNotes],
+  };
+
+  return createWorkspace({
+    outputDir: input.outputDir,
+    name: input.name,
+    artistName: input.artistName,
+    bpmRange: input.bpmRange,
+    defaults,
+  });
 }
 
 // ─── Validation ─────────────────────────────────────────────────────────────────
