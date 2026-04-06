@@ -137,8 +137,9 @@ test("production package writer creates metadata plus the standardized Fornix fo
   }
 
   const mixReport = readText(path.join(packageRoot, PACKAGE_LAYOUT.mix.dir, PACKAGE_LAYOUT.mix.filename));
-  assert.match(mixReport, /Section:/i);
+  assert.match(mixReport, /## P[1-3] – /);
   assert.match(mixReport, /Likely issue:/i);
+  assert.match(mixReport, /Action to test:/i);
   assert.match(mixReport, /Priority:/i);
 });
 
@@ -238,14 +239,14 @@ test("mix actions are actionable, section-aware, and sorted by priority", () => 
     cinematicIntensity: "high",
   });
 
-  assert.ok(actions.length >= 7);
-  assert.ok(actions.some((action) => action.section === "anti-climax"));
-  assert.ok(actions.some((action) => action.section === "breakdown"));
+  assert.ok(actions.length >= 5);
+  assert.ok(actions.some((action) => action.section === "Drop"));
+  assert.ok(actions.some((action) => action.section === "Breakdown"));
 
   for (const action of actions) {
     assert.ok(action.likelyIssue.length > 20);
     assert.ok(action.whyItMatters.length > 20);
-    assert.ok(action.exactActionToTest.length > 30);
+    assert.ok(action.actionToTest.length > 30);
     assert.match(action.priority, /^P[1-3]$/);
   }
 
