@@ -1,12 +1,20 @@
 node_modules/
 dist/
-.fornix-mcp.log
-*.local.json
-.DS_Store
-Thumbs.db
+*.log
+*.key
+*.pem
+*.env
+*.diff
+secrets/*
+claude-desktop-config.example.json
+claude-desktop-config.json
+fornix-mcp.config.example.json
+fornix-mcp.config.json.example
+HumDes App.code-workspace
 
 # Local editor / IDE (machine-specific)
 .vscode/
-
-# Working diff exports (keep out of version control by default)
-*.diff
+.claude/
+.continue/
+.DS_Store
+Thumbs.db

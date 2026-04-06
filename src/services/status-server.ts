@@ -268,7 +268,10 @@ export function startStatusServer(): void {
 
   _server.on("error", (e: NodeJS.ErrnoException) => {
     if (e.code === "EADDRINUSE") {
-      process.stderr.write(`[dashboard] Port ${DASHBOARD_PORT} in use – dashboard disabled.\n`);
+      process.stderr.write(`[dashboard] Port ${DASHBOARD_PORT} in use – retrying in 30s.\n`);
+      _server?.close();
+      _server = null;
+      setTimeout(() => startStatusServer(), 30_000);
     }
   });
 }
