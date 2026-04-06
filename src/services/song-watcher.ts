@@ -61,6 +61,7 @@ function isSongFile(filePath: string): boolean {
   return lower.endsWith(".song") || lower.endsWith(".song.autosave");
 }
 
+
 // ─── Diffing ──────────────────────────────────────────────────────────────────
 
 function diffSnapshots(prev: SongSnapshot, curr: SongSnapshot): SongDiff {

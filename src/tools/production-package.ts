@@ -97,6 +97,13 @@ const productionPackageInputShape = {
   cinematicIntensity: z.string().optional().describe("Low, medium, high, or a custom cinematic intensity note"),
   aggressionLevel: z.string().optional().describe("Low, medium, high, or a custom aggression note"),
   emotionalTone: z.string().optional().describe("Emotional tone descriptor"),
+  targetPlatform: z.enum(["festival", "streaming", "beatport", "dj-set", "sync"])
+    .optional()
+    .describe("Primary distribution target — affects mastering specs and checklist delivery items"),
+  albumPosition: z.number().int().min(1).max(20).optional()
+    .describe("Track position within a concept album (1 = opener). Affects project plan narrative framing."),
+  albumContext: z.string().optional()
+    .describe("Brief description of the album narrative arc and this track role within it"),
 } satisfies Record<keyof ProductionPackageInput, z.ZodTypeAny>;
 
 const productionPackageSchema = z.object(productionPackageInputShape);
@@ -367,10 +374,9 @@ export function registerProductionPackageTools(server: McpServer): void {
             savedPath,
             priorities: mixActions.map((action) => ({
               priority: action.priority,
-              section: action.section ?? null,
-              area: action.area,
+              section: action.section,
               likelyIssue: action.likelyIssue,
-              exactActionToTest: action.exactActionToTest,
+              actionToTest: action.actionToTest,
             })),
             report: markdown,
           }),
