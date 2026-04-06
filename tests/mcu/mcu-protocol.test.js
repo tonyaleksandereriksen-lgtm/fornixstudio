@@ -99,9 +99,9 @@ test("parseMcuMessage: control change → timecode digit", () => {
 });
 
 test("parseMcuMessage: SysEx → LCD text", () => {
-  // F0 00 00 66 14 12 [offset] [text bytes...] F7
+  // F0 00 00 66 10 12 [offset] [text bytes...] F7
   const text = "Kick   ";
-  const bytes = [0xf0, 0x00, 0x00, 0x66, 0x14, 0x12, 0x00,
+  const bytes = [0xf0, 0x00, 0x00, 0x66, 0x10, 0x12, 0x00,
     ...Array.from(text).map(c => c.charCodeAt(0)),
     0xf7];
   const msg = parseMcuMessage(bytes);
@@ -113,7 +113,7 @@ test("parseMcuMessage: SysEx → LCD text", () => {
 });
 
 test("parseMcuMessage: LCD bottom row (offset >= 56)", () => {
-  const bytes = [0xf0, 0x00, 0x00, 0x66, 0x14, 0x12, 60,
+  const bytes = [0xf0, 0x00, 0x00, 0x66, 0x10, 0x12, 60,
     0x41, 0x42, 0x43, // "ABC"
     0xf7];
   const msg = parseMcuMessage(bytes);

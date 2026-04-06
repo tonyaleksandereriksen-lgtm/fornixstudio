@@ -15,6 +15,9 @@ import { getConfig } from "./workspace.js";
 import { getWatcherStatus } from "./song-watcher.js";
 import { getMcuBridgeState } from "./mcu-bridge.js";
 import { SERVER_VERSION } from "../constants.js";
+import { StudioOneAdapter } from "../daw/studio-one-adapter.js";
+import { buildProducerPlan } from "../producer/orchestrator.js";
+import { VALID_INTENT_IDS, type ProducerIntentId } from "../producer/intents.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DASHBOARD_PORT = 7891;
@@ -138,6 +141,9 @@ export const TOOL_MANIFEST = [
   { name: "s1_session_diff",             family: "Song Watcher",   readOnly: true  },
   { name: "s1_stop_watching",            family: "Song Watcher",   readOnly: false },
 
+  // Producer
+  { name: "fornix_producer_plan",       family: "Producer",       readOnly: true  },
+
   // MCU Bridge
   { name: "mcu_list_ports",             family: "MCU Bridge",     readOnly: true  },
   { name: "mcu_connect",                family: "MCU Bridge",     readOnly: false },
@@ -178,6 +184,11 @@ export function startStatusServer(): void {
     try {
       if (url.pathname === "/" || url.pathname === "/dashboard") {
         serveDashboard(res);
+        return;
+      }
+
+      if (url.pathname === "/producer") {
+        serveProducerView(res);
         return;
       }
 
@@ -249,6 +260,23 @@ export function startStatusServer(): void {
         return;
       }
 
+      if (url.pathname === "/api/producer-plan") {
+        const intent = url.searchParams.get("intent") ?? "session-overview";
+        if (!VALID_INTENT_IDS.includes(intent as ProducerIntentId)) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: `Invalid intent. Valid: ${VALID_INTENT_IDS.join(", ")}` }));
+          return;
+        }
+        const targetSectionId = url.searchParams.get("section") ?? undefined;
+        const adapter = new StudioOneAdapter();
+        const plan = await buildProducerPlan(adapter, {
+          id: intent as ProducerIntentId,
+          targetSectionId,
+        });
+        json(res, plan);
+        return;
+      }
+
       if (url.pathname === "/api/tools") {
         json(res, { tools: TOOL_MANIFEST, count: TOOL_MANIFEST.length });
         return;
@@ -285,6 +313,24 @@ function json(res: http.ServerResponse, data: unknown): void {
   res.setHeader("Content-Type", "application/json");
   res.writeHead(200);
   res.end(JSON.stringify(data, null, 2));
+}
+
+function serveProducerView(res: http.ServerResponse): void {
+  const producerPath = path.join(__dirname, "../../producer.html");
+  if (fs.existsSync(producerPath)) {
+    res.setHeader("Content-Type", "text/html");
+    res.writeHead(200);
+    res.end(fs.readFileSync(producerPath, "utf8"));
+    return;
+  }
+
+  res.setHeader("Content-Type", "text/html");
+  res.writeHead(200);
+  res.end(`<!DOCTYPE html><html><body>
+    <h2>Fornix Studio — Producer Plan</h2>
+    <p>Producer view not found. Place <code>producer.html</code> in the project root.</p>
+    <p><a href="/api/producer-plan?intent=session-overview">View JSON</a></p>
+  </body></html>`);
 }
 
 function serveDashboard(res: http.ServerResponse): void {

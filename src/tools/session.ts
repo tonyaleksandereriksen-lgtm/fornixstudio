@@ -498,8 +498,8 @@ export function registerSessionTools(server: McpServer): void {
   }, async ({ expectedTempo, songFilePath }) => {
 
     // ── Gather session data from either source ───────────────────────────
-    let songTempo: number | null = null;
-    let tracks: Array<{ name: string; type: string; muted?: boolean; volume?: number }> = [];
+    let songTempo: number | null;
+    let tracks: Array<{ name: string; type: string; muted?: boolean; volume?: number }>;
     let mode: string;
     let arrangementNote = "";
 

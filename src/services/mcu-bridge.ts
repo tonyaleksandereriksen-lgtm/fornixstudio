@@ -15,6 +15,11 @@
 import {
   parseMcuMessage,
   MCU_CHANNELS,
+  buildFaderMessage,
+  buildButtonRelease,
+  buildDeviceEnquiryResponse,
+  buildHostConnectionReply,
+  MCU_BUTTONS,
   type McuMessage,
   type McuFaderMessage,
   type McuButtonMessage,
@@ -43,6 +48,7 @@ export interface McuTransportState {
 
 export interface McuBridgeState {
   connected: boolean;
+  handshakeOk: boolean;
   inputPort: string | null;
   outputPort: string | null;
   channels: McuChannelState[];
@@ -57,14 +63,16 @@ export interface McuBridgeState {
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
-let _jzz: any = null;
-let _midiIn: any = null;
-let _midiOut: any = null;
+let _jzz: any = null; // eslint-disable-line @typescript-eslint/no-explicit-any -- JZZ is untyped
+let _midiIn: any = null; // eslint-disable-line @typescript-eslint/no-explicit-any
+let _midiOut: any = null; // eslint-disable-line @typescript-eslint/no-explicit-any
 let _inputPortName: string | null = null;
 let _outputPortName: string | null = null;
+let _mcuHandshakeOk = false;
 let _bankOffset = 0;
 let _messageCount = 0;
 let _lastMessageAt: string | null = null;
+let _handshakeResolve: (() => void) | null = null;
 
 const _channels: McuChannelState[] = Array.from({ length: MCU_CHANNELS }, () => ({
   name: "",
@@ -128,6 +136,15 @@ function handleMidiMessage(data: number[]): void {
     case "timecode":
       _timecodeDigits[msg.digit] = msg.char;
       break;
+    case "device_enquiry":
+      handleDeviceEnquiry();
+      break;
+    case "host_connection_query":
+      handleHostConnectionQuery(msg.serial, msg.challenge);
+      break;
+    case "host_connection_confirm":
+      handleHostConnectionConfirm();
+      break;
   }
 
   for (const cb of _onMessageCallbacks) {
@@ -184,6 +201,27 @@ function handleLcd(msg: McuLcdMessage): void {
   }
 }
 
+// ─── Handshake handlers ──────────────────────────────────────────────────────
+
+function handleDeviceEnquiry(): void {
+  process.stderr.write("[mcu-bridge] Received Device Enquiry — sending Identity Reply\n");
+  sendMidi(buildDeviceEnquiryResponse());
+}
+
+function handleHostConnectionQuery(serial: number[], challenge: number[]): void {
+  process.stderr.write(`[mcu-bridge] Host Connection Query — serial=${serial.map(b => b.toString(16).padStart(2, "0")).join(" ")}, responding\n`);
+  sendMidi(buildHostConnectionReply(serial, challenge));
+}
+
+function handleHostConnectionConfirm(): void {
+  _mcuHandshakeOk = true;
+  process.stderr.write("[mcu-bridge] Host Connection Confirmed — handshake complete, S1 streaming\n");
+  if (_handshakeResolve) {
+    _handshakeResolve();
+    _handshakeResolve = null;
+  }
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /** List available MIDI ports. Returns null if JZZ is not available. */
@@ -202,6 +240,46 @@ export async function listMidiPorts(): Promise<{ inputs: string[]; outputs: stri
       });
       this.close();
     });
+  });
+}
+
+/**
+ * Perform the MCU SysEx handshake with Studio One.
+ * 1. Send Device Enquiry Response proactively to kick off the sequence.
+ * 2. S1 sends Device Enquiry Request → we reply (handled in handleDeviceEnquiry).
+ * 3. S1 sends Host Connection Query → we reply (handled in handleHostConnectionQuery).
+ * 4. S1 sends Host Connection Confirmation → handshakeOk = true.
+ * Resolves true if handshake completes within timeout, false otherwise.
+ */
+async function performMcuHandshake(timeoutMs = 5000): Promise<boolean> {
+  if (_mcuHandshakeOk) return true;
+
+  // Send proactive Device Enquiry Response to kick things off
+  sendMidi(buildDeviceEnquiryResponse());
+  process.stderr.write("[mcu-bridge] Sent proactive Device Enquiry Response\n");
+
+  return new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => {
+      _handshakeResolve = null;
+      if (_mcuHandshakeOk) {
+        resolve(true);
+      } else {
+        process.stderr.write("[mcu-bridge] Handshake timeout — S1 may not have responded yet. Bridge still listening.\n");
+        resolve(false);
+      }
+    }, timeoutMs);
+
+    _handshakeResolve = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+
+    // If it already completed (race), resolve immediately
+    if (_mcuHandshakeOk) {
+      clearTimeout(timer);
+      _handshakeResolve = null;
+      resolve(true);
+    }
   });
 }
 
@@ -260,13 +338,20 @@ export async function connectMcu(inputPortName: string, outputPortName: string):
           midiOut.or(() => {
             resolve({ ok: false, message: `Failed to open MIDI output "${outputPortName}"` });
           });
-          midiOut.and(function () {
+          midiOut.and(async function () {
             _midiOut = midiOut;
             _outputPortName = outputPortName;
-            process.stderr.write(`[mcu-bridge] Connected: in="${inputPortName}" out="${outputPortName}"\n`);
+            process.stderr.write(`[mcu-bridge] Ports open: in="${inputPortName}" out="${outputPortName}"\n`);
+
+            // Perform MCU handshake (5s timeout)
+            const handshakeOk = await performMcuHandshake();
+            const handshakeNote = handshakeOk
+              ? "Handshake complete — S1 is streaming."
+              : "Handshake pending — S1 may start streaming after it detects the surface.";
+
             resolve({
               ok: true,
-              message: `MCU bridge connected. Input: ${inputPortName}, Output: ${outputPortName}`,
+              message: `MCU bridge connected. Input: ${inputPortName}, Output: ${outputPortName}. ${handshakeNote}`,
             });
           });
         });
@@ -289,6 +374,8 @@ export async function disconnectMcu(): Promise<void> {
   }
   _inputPortName = null;
   _outputPortName = null;
+  _mcuHandshakeOk = false;
+  _handshakeResolve = null;
   _messageCount = 0;
   _lastMessageAt = null;
 
@@ -316,50 +403,59 @@ export function sendMidi(bytes: number[]): boolean {
   }
 }
 
-/** Send a transport command. */
+/** Send a button press followed by release (MCU expects both). */
+function sendMidiPressRelease(note: number): boolean {
+  const pressOk = sendMidi([0x90, note & 0x7f, 0x7f]);
+  if (!pressOk) return false;
+  return sendMidi(buildButtonRelease(note));
+}
+
+/** Send a transport command (press + release). */
 export function sendTransport(command: "play" | "stop" | "record" | "rewind" | "forward"): boolean {
-  const { buildPlay, buildStop, buildRecord, buildRewind, buildForward } = require("./mcu-protocol.js");
-  const builders: Record<string, () => number[]> = {
-    play: buildPlay, stop: buildStop, record: buildRecord,
-    rewind: buildRewind, forward: buildForward,
+  const noteMap: Record<string, number> = {
+    play: MCU_BUTTONS.PLAY, stop: MCU_BUTTONS.STOP, record: MCU_BUTTONS.RECORD,
+    rewind: MCU_BUTTONS.REWIND, forward: MCU_BUTTONS.FORWARD,
   };
-  return sendMidi(builders[command]());
+  return sendMidiPressRelease(noteMap[command]);
+}
+
+/** Send a button press+release (for tool-level use). */
+export function sendButton(note: number): boolean {
+  return sendMidiPressRelease(note);
 }
 
 /** Send a fader move. */
 export function sendFader(channel: number, normalizedValue: number): boolean {
-  const { buildFaderMessage } = require("./mcu-protocol.js");
   return sendMidi(buildFaderMessage(channel, normalizedValue));
 }
 
-/** Send a solo/mute toggle. */
+/** Send a solo/mute toggle (press + release). */
 export function sendSolo(channel: number): boolean {
-  const { buildSolo } = require("./mcu-protocol.js");
-  return sendMidi(buildSolo(channel));
+  return sendMidiPressRelease(MCU_BUTTONS.SOLO_BASE + (channel & 0x07));
 }
 
 export function sendMute(channel: number): boolean {
-  const { buildMute } = require("./mcu-protocol.js");
-  return sendMidi(buildMute(channel));
+  return sendMidiPressRelease(MCU_BUTTONS.MUTE_BASE + (channel & 0x07));
 }
 
 /** Switch bank (8 channels at a time). */
 export function sendBankLeft(): boolean {
-  const { buildBankLeft } = require("./mcu-protocol.js");
-  if (_bankOffset > 0) _bankOffset -= 8;
-  return sendMidi(buildBankLeft());
+  const ok = sendMidiPressRelease(MCU_BUTTONS.BANK_LEFT);
+  if (ok && _bankOffset > 0) _bankOffset -= 8;
+  return ok;
 }
 
 export function sendBankRight(): boolean {
-  const { buildBankRight } = require("./mcu-protocol.js");
-  _bankOffset += 8;
-  return sendMidi(buildBankRight());
+  const ok = sendMidiPressRelease(MCU_BUTTONS.BANK_RIGHT);
+  if (ok) _bankOffset += 8;
+  return ok;
 }
 
 /** Get full bridge state. */
 export function getMcuBridgeState(): McuBridgeState {
   return {
     connected: _midiIn !== null && _midiOut !== null,
+    handshakeOk: _mcuHandshakeOk,
     inputPort: _inputPortName,
     outputPort: _outputPortName,
     channels: _channels.map(ch => ({ ...ch })),

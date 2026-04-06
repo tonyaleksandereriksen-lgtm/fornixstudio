@@ -13,7 +13,7 @@
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 export const MCU_CHANNELS = 8;
-export const MCU_SYSEX_HEADER = [0x00, 0x00, 0x66, 0x14]; // Mackie Control Universal
+export const MCU_SYSEX_HEADER = [0x00, 0x00, 0x66, 0x10]; // Mackie Control Universal (0x10 = main unit, 0x14 = extender)
 
 // Button note assignments (MIDI channel 0)
 export const MCU_BUTTONS = {
@@ -127,13 +127,31 @@ export interface McuVpotRingMessage {
   value: number;       // ring position data
 }
 
+export interface McuDeviceEnquiryMessage {
+  type: "device_enquiry";
+}
+
+export interface McuHostConnectionQueryMessage {
+  type: "host_connection_query";
+  serial: number[];    // 7 bytes
+  challenge: number[]; // 4 bytes
+}
+
+export interface McuHostConnectionConfirmMessage {
+  type: "host_connection_confirm";
+  serial: number[];    // 7 bytes
+}
+
 export type McuMessage =
   | McuFaderMessage
   | McuButtonMessage
   | McuVuMessage
   | McuLcdMessage
   | McuTimecodeMessage
-  | McuVpotRingMessage;
+  | McuVpotRingMessage
+  | McuDeviceEnquiryMessage
+  | McuHostConnectionQueryMessage
+  | McuHostConnectionConfirmMessage;
 
 // ─── Button name resolver ─────────────────────────────────────────────────────
 
@@ -227,11 +245,33 @@ export function parseMcuMessage(data: number[]): McuMessage | null {
     }
   }
 
-  // SysEx → LCD text
-  if (data[0] === 0xf0 && data.length >= 8) {
-    // Validate MCU SysEx header: F0 00 00 66 14
-    if (data[1] === 0x00 && data[2] === 0x00 && data[3] === 0x66 && data[4] === 0x14) {
+  // SysEx messages
+  if (data[0] === 0xf0 && data.length >= 6) {
+    // Universal SysEx: Device Enquiry Request (F0 7E 7F 06 01 F7)
+    if (data[1] === 0x7e && data[3] === 0x06 && data[4] === 0x01) {
+      return { type: "device_enquiry" };
+    }
+
+    // MCU SysEx: F0 00 00 66 10 <command> ...
+    if (data.length >= 8 && data[1] === 0x00 && data[2] === 0x00 && data[3] === 0x66 && data[4] === 0x10) {
       const command = data[5];
+
+      // Host Connection Query (command 0x01): serial[7] + challenge[4]
+      if (command === 0x01 && data.length >= 18) {
+        return {
+          type: "host_connection_query",
+          serial: data.slice(6, 13),
+          challenge: data.slice(13, 17),
+        };
+      }
+
+      // Host Connection Confirmation (command 0x03): serial[7]
+      if (command === 0x03 && data.length >= 14) {
+        return {
+          type: "host_connection_confirm",
+          serial: data.slice(6, 13),
+        };
+      }
 
       // LCD update (command 0x12)
       if (command === 0x12 && data.length >= 8) {
@@ -308,4 +348,52 @@ export function buildSelect(channel: number): number[] {
 }
 export function buildRecArm(channel: number): number[] {
   return buildButtonPress(MCU_BUTTONS.REC_ARM_BASE + (channel & 0x07));
+}
+
+// ─── Handshake SysEx builders ────────────────────────────────────────────────
+
+/**
+ * Build Device Enquiry Response (Identity Reply).
+ * F0 7E 7F 06 02  00 00 66  10  56 31 2E 34 32  F7
+ * Universal SysEx  Mackie   MCU   "V1.42"        EOX
+ */
+export function buildDeviceEnquiryResponse(): number[] {
+  return [
+    0xf0, 0x7e, 0x7f, 0x06, 0x02,  // Universal SysEx Identity Reply
+    0x00, 0x00, 0x66,                // Manufacturer: Mackie
+    0x10,                            // Device: MCU main unit
+    0x56, 0x31, 0x2e, 0x34, 0x32,   // Version: "V1.42"
+    0xf7,
+  ];
+}
+
+/**
+ * Compute the MCU challenge response.
+ * Standard MCU handshake math (Mackie Control specification):
+ *   R[0] = 0x7F & (C[0] + (C[3] ^ 0x0A))
+ *   R[1] = 0x7F & (C[1] + (C[2] ^ 0x0A))
+ *   R[2] = 0x7F & (C[2] + (C[1] ^ 0x0A))
+ *   R[3] = 0x7F & (C[3] + (C[0] ^ 0x0A))
+ */
+export function computeChallengeResponse(challenge: number[]): number[] {
+  return [
+    0x7f & (challenge[0] + (challenge[3] ^ 0x0a)),
+    0x7f & (challenge[1] + (challenge[2] ^ 0x0a)),
+    0x7f & (challenge[2] + (challenge[1] ^ 0x0a)),
+    0x7f & (challenge[3] + (challenge[0] ^ 0x0a)),
+  ];
+}
+
+/**
+ * Build Host Connection Reply.
+ * F0 00 00 66 10 02  <serial[7]> <response[4]>  F7
+ */
+export function buildHostConnectionReply(serial: number[], challenge: number[]): number[] {
+  const response = computeChallengeResponse(challenge);
+  return [
+    0xf0, ...MCU_SYSEX_HEADER, 0x02,  // command 0x02 = Host Connection Reply
+    ...serial,
+    ...response,
+    0xf7,
+  ];
 }
