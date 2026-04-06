@@ -10,6 +10,7 @@ import path from "path";
 import { sendCommand, isBridgeReady } from "../../services/bridge.js";
 import { logAction, formatToolResult } from "../../services/logger.js";
 import { guardPath, isReadOnly } from "../../services/workspace.js";
+import { tryParseSongFile } from "../../services/song-file.js";
 import { requireBridgeRead, requireBridgeWrite } from "./bridge-guard.js";
 
 // Standard hardstyle/trance arrangement sections
@@ -55,19 +56,54 @@ export function registerArrangementTools(server: McpServer): void {
 
   server.registerTool("s1_get_markers", {
     title: "Get All Markers",
-    description: "List all markers in the current Studio One song.",
-    inputSchema: {},
+    description:
+      "List all markers in the current Studio One song. " +
+      "When the bridge is unavailable, provide a songFilePath to read markers from a .song file.",
+    inputSchema: {
+      songFilePath: z.string().optional().describe("Path to .song file (used when bridge is unavailable)"),
+    },
     annotations: { readOnlyHint: true, destructiveHint: false },
-  }, async () => {
-    const blocked = requireBridgeRead("read markers");
-    if (blocked) return { content: [{ type: "text", text: blocked }] };
-    try {
-      const res = await sendCommand("getMarkers");
-      if (!res.ok) throw new Error(res.error);
-      return { content: [{ type: "text", text: formatToolResult(true, "Markers", res.data) }] };
-    } catch (e) {
-      return { content: [{ type: "text", text: `✗ ${e}` }], isError: true };
+  }, async ({ songFilePath }) => {
+    // Try live bridge first
+    if (isBridgeReady()) {
+      try {
+        const res = await sendCommand("getMarkers");
+        if (res.ok) {
+          return { content: [{ type: "text", text: formatToolResult(true, "Markers (live)", res.data) }] };
+        }
+      } catch { /* fall through to file-based */ }
     }
+
+    // File-based fallback
+    if (songFilePath) {
+      try {
+        guardPath(songFilePath);
+        const result = tryParseSongFile(songFilePath);
+        if (result.markers.length === 0) {
+          return { content: [{ type: "text", text: "No markers found in " + path.basename(songFilePath) }] };
+        }
+        const lines = [
+          `═══ Markers (from .song file) ═══`,
+          `Song: ${path.basename(songFilePath, ".song")}`,
+          `Tempo: ${result.tempo ?? "?"} BPM`,
+          `Markers: ${result.markers.length}`,
+          "",
+          "| # | Name | Bar | Time |",
+          "|---|------|-----|------|",
+          ...result.markers.map((m, i) => {
+            const mins = Math.floor(m.positionSeconds / 60);
+            const secs = Math.round(m.positionSeconds % 60);
+            return `| ${i + 1} | ${m.name} | ${m.positionBars} | ${mins}:${String(secs).padStart(2, "0")} |`;
+          }),
+        ];
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `✗ Could not read song file: ${e}` }], isError: true };
+      }
+    }
+
+    const blocked = requireBridgeRead("read markers");
+    return { content: [{ type: "text", text: blocked! }] };
   });
 
   // ── s1_delete_marker ──────────────────────────────────────────────────────

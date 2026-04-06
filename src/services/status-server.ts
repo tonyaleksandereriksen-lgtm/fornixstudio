@@ -12,6 +12,8 @@ import { getBridgeRuntimeStatus, getBridgeStatus } from "./bridge.js";
 import { readRecentLogs } from "./logger.js";
 import { getStatus as getGitStatus } from "./checkpoint.js";
 import { getConfig } from "./workspace.js";
+import { getWatcherStatus } from "./song-watcher.js";
+import { getMcuBridgeState } from "./mcu-bridge.js";
 import { SERVER_VERSION } from "../constants.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -106,12 +108,48 @@ export const TOOL_MANIFEST = [
   { name: "fornix_regenerate_package_section",  family: "Production Package", readOnly: false },
   { name: "fornix_get_package_summary",         family: "Production Package", readOnly: true  },
   { name: "fornix_generate_mix_actions",        family: "Mix",                readOnly: false },
+  { name: "fornix_batch_regenerate_package",   family: "Production Package", readOnly: false },
+  { name: "fornix_list_templates",             family: "Template Library",   readOnly: true  },
+  { name: "fornix_get_template",               family: "Template Library",   readOnly: true  },
+
+  // Workspace
+  { name: "fornix_create_workspace",          family: "Workspace",          readOnly: false },
+  { name: "fornix_get_workspace_summary",     family: "Workspace",          readOnly: true  },
+  { name: "fornix_add_track_to_workspace",    family: "Workspace",          readOnly: false },
+  { name: "fornix_generate_workspace_packages", family: "Workspace",       readOnly: false },
+  { name: "fornix_create_workspace_from_template", family: "Workspace",    readOnly: false },
+  { name: "fornix_check_workspace_consistency",    family: "Workspace",    readOnly: true  },
+  { name: "fornix_remove_track_from_workspace",   family: "Workspace",    readOnly: false },
+  { name: "fornix_update_workspace_defaults",      family: "Workspace",    readOnly: false },
+
+  // Session
+  // Arrangement Analysis
+  { name: "fornix_analyze_arrangement",  family: "Arrangement Analysis", readOnly: true },
 
   // Session
   { name: "session_kickstart",           family: "Session",        readOnly: false },
   { name: "session_apply_mix_preset",    family: "Session",        readOnly: false },
   { name: "session_health_check",        family: "Session",        readOnly: true  },
   { name: "session_list_mix_presets",    family: "Session",        readOnly: true  },
+
+  // Song Watcher
+  { name: "s1_watch_session",            family: "Song Watcher",   readOnly: true  },
+  { name: "s1_session_snapshot",         family: "Song Watcher",   readOnly: true  },
+  { name: "s1_session_diff",             family: "Song Watcher",   readOnly: true  },
+  { name: "s1_stop_watching",            family: "Song Watcher",   readOnly: false },
+
+  // MCU Bridge
+  { name: "mcu_list_ports",             family: "MCU Bridge",     readOnly: true  },
+  { name: "mcu_connect",                family: "MCU Bridge",     readOnly: false },
+  { name: "mcu_disconnect",             family: "MCU Bridge",     readOnly: false },
+  { name: "mcu_state",                  family: "MCU Bridge",     readOnly: true  },
+  { name: "mcu_transport",              family: "MCU Bridge",     readOnly: false },
+  { name: "mcu_fader",                  family: "MCU Bridge",     readOnly: false },
+  { name: "mcu_solo",                   family: "MCU Bridge",     readOnly: false },
+  { name: "mcu_mute",                   family: "MCU Bridge",     readOnly: false },
+  { name: "mcu_bank",                   family: "MCU Bridge",     readOnly: false },
+  { name: "mcu_save",                   family: "MCU Bridge",     readOnly: false },
+  { name: "mcu_undo",                   family: "MCU Bridge",     readOnly: false },
 ] as const;
 
 export function incrementToolCall(): void {
@@ -190,6 +228,8 @@ export function startStatusServer(): void {
             dryRunByDefault: cfg.dryRunByDefault ?? false,
           },
           git: gitStatus,
+          songWatcher: getWatcherStatus(),
+          mcuBridge: getMcuBridgeState(),
           stats: {
             toolCallsThisSession: _toolCallCount,
             registeredTools: TOOL_MANIFEST.length,
@@ -228,7 +268,10 @@ export function startStatusServer(): void {
 
   _server.on("error", (e: NodeJS.ErrnoException) => {
     if (e.code === "EADDRINUSE") {
-      process.stderr.write(`[dashboard] Port ${DASHBOARD_PORT} in use – dashboard disabled.\n`);
+      process.stderr.write(`[dashboard] Port ${DASHBOARD_PORT} in use – retrying in 30s.\n`);
+      _server?.close();
+      _server = null;
+      setTimeout(() => startStatusServer(), 30_000);
     }
   });
 }

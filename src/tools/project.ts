@@ -228,6 +228,6 @@ export function registerProjectTools(server: McpServer): void {
       const dry = e.dryRun ? " [DRY]" : "";
       return `${e.ts} ${icon}${dry} [${e.tool}] ${e.summary}`;
     });
-    return { content: [{ type: "text", text: lines.join("\n") }] };
+    return { content: [{ type: "text", text: truncate(lines.join("\n")) }] };
   });
 }

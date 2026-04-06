@@ -14,11 +14,14 @@ import {
   type PreviewPackageUpdateInput,
   type ProductionPackageInput,
   type RegeneratePackageSectionInput,
+  type BatchRegenerateInput,
   PACKAGE_GENERATOR_TOOL,
   PACKAGE_METADATA_LAYOUT,
   PACKAGE_PLAN_TOOL,
   PACKAGE_PREVIEW_TOOL,
   PACKAGE_REGEN_TOOL,
+  PACKAGE_BATCH_REGEN_TOOL,
+  batchRegeneratePackage,
   buildMixActions,
   getPackageSummary,
   planPackageUpdate,
@@ -28,6 +31,11 @@ import {
   slugifyTrackName,
   writeProductionPackage,
 } from "../services/production-package.js";
+import {
+  type TemplateCategory,
+  getTemplate,
+  listTemplates,
+} from "../services/template-library.js";
 
 const styleVariantSchema = z.enum([
   "cinematic-euphoric",
@@ -662,6 +670,164 @@ export function registerProductionPackageTools(server: McpServer): void {
         ok: false,
         error: err,
       });
+      return { content: [{ type: "text", text: `✗ ${err}` }], isError: true };
+    }
+  });
+
+  // ── fornix_batch_regenerate_package ─────────────────────────────────────────
+  server.registerTool("fornix_batch_regenerate_package", {
+    title: "Batch Regenerate Package",
+    description:
+      "Apply an entire update plan in one call: regenerate multiple (or all) sections of an existing production package. " +
+      "If sections are not specified, regenerates all recommended sections from the update plan. " +
+      "Metadata is updated once after all sections are processed.",
+    inputSchema: {
+      ...packageUpdateInputShape,
+      sections: z.array(packageSectionSchema).optional()
+        .describe("Sections to regenerate (default: all recommended from update plan)"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  }, async (rawInput) => {
+    try {
+      const { sections, ...rest } = rawInput;
+      const parsed = packageUpdateSchema.parse(rest);
+      const guarded = guardLocatorPath(parsed);
+
+      const result = batchRegeneratePackage({
+        ...parsed,
+        ...guarded,
+        sections: sections as BatchRegenerateInput["sections"],
+      });
+
+      const trackName = result.metadata.trackName;
+      const summary =
+        `Batch regenerated ${result.regeneratedSections.length} sections for "${trackName}"` +
+        (result.skippedSections.length > 0 ? ` (${result.skippedSections.length} skipped)` : "");
+
+      logAction({
+        tool: PACKAGE_BATCH_REGEN_TOOL,
+        action: "write",
+        target: result.packageRoot,
+        summary,
+        dryRun: false,
+        ok: true,
+      });
+
+      return {
+        content: [{
+          type: "text",
+          text: formatToolResult(true, summary, {
+            packageRoot: result.packageRoot,
+            regeneratedSections: result.regeneratedSections,
+            skippedSections: result.skippedSections,
+            updatedFiles: result.updatedFiles,
+            changedProfileFields: result.changedProfileFields,
+            metadataPath: result.metadataPath,
+            packageHealth: result.packageSummary.packageHealth,
+            packageConsistencySummary: result.packageSummary.packageConsistencySummary,
+          }),
+        }],
+      };
+    } catch (e) {
+      const err = String(e);
+      logAction({
+        tool: PACKAGE_BATCH_REGEN_TOOL,
+        action: "write",
+        summary: err,
+        dryRun: false,
+        ok: false,
+        error: err,
+      });
+      return { content: [{ type: "text", text: `✗ ${err}` }], isError: true };
+    }
+  });
+
+  // ── fornix_list_templates ──────────────────────────────────────────────────
+  server.registerTool("fornix_list_templates", {
+    title: "List Production Templates",
+    description:
+      "List available pre-built production templates for common hardstyle scenarios. " +
+      "Optionally filter by category (euphoric, raw, cinematic, festival, hybrid).",
+    inputSchema: {
+      category: z.enum(["euphoric", "raw", "cinematic", "festival", "hybrid"]).optional()
+        .describe("Filter templates by category"),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+  }, async (rawInput) => {
+    try {
+      const templates = listTemplates(rawInput.category as TemplateCategory | undefined);
+
+      const lines: string[] = [
+        `Templates: ${templates.length}${rawInput.category ? ` (${rawInput.category})` : ""}`,
+        "",
+      ];
+
+      for (const t of templates) {
+        lines.push(`  [${t.id}] ${t.name} (${t.category})`);
+        lines.push(`    ${t.description}`);
+      }
+
+      logAction({
+        tool: "fornix_list_templates",
+        action: "read",
+        summary: `Listed ${templates.length} templates`,
+        dryRun: false,
+        ok: true,
+      });
+
+      return {
+        content: [{
+          type: "text",
+          text: formatToolResult(true, `${templates.length} templates available`, lines.join("\n")),
+        }],
+      };
+    } catch (e) {
+      const err = String(e);
+      return { content: [{ type: "text", text: `✗ ${err}` }], isError: true };
+    }
+  });
+
+  // ── fornix_get_template ────────────────────────────────────────────────────
+  server.registerTool("fornix_get_template", {
+    title: "Get Production Template",
+    description:
+      "Get the full details of a specific production template by ID. " +
+      "Returns all style defaults, creative brief, mix concerns, and reference notes.",
+    inputSchema: {
+      id: z.string().min(1).describe("Template ID (e.g. 'cinematic-euphoric-epic', 'rawphoric-banger')"),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+  }, async (rawInput) => {
+    try {
+      const template = getTemplate(rawInput.id);
+
+      if (!template) {
+        const available = listTemplates().map((t) => t.id).join(", ");
+        return {
+          content: [{
+            type: "text",
+            text: `✗ Template "${rawInput.id}" not found. Available: ${available}`,
+          }],
+          isError: true,
+        };
+      }
+
+      logAction({
+        tool: "fornix_get_template",
+        action: "read",
+        summary: `Retrieved template "${template.name}"`,
+        dryRun: false,
+        ok: true,
+      });
+
+      return {
+        content: [{
+          type: "text",
+          text: formatToolResult(true, `Template: ${template.name}`, template),
+        }],
+      };
+    } catch (e) {
+      const err = String(e);
       return { content: [{ type: "text", text: `✗ ${err}` }], isError: true };
     }
   });

@@ -387,5 +387,8 @@ test("production package tools register generation, summary, regeneration, and m
     "fornix_plan_package_update",
     "fornix_regenerate_package_section",
     "fornix_get_package_summary",
+    "fornix_batch_regenerate_package",
+    "fornix_list_templates",
+    "fornix_get_template",
   ]);
 });

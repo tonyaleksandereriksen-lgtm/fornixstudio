@@ -332,6 +332,188 @@
     animation: pulse 2s infinite;
     display: inline-block;
   }
+
+  /* ── MCU Bridge panel ────────────────────────────────────────────────────── */
+  .mcu-panel { padding: 16px 20px; }
+
+  .mcu-transport {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    align-items: center;
+  }
+  .mcu-transport-btn {
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: var(--mono);
+    border: 1px solid var(--border);
+    background: var(--bg2);
+    color: var(--muted);
+  }
+  .mcu-transport-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .mcu-transport-btn.rec-active { background: var(--red); border-color: var(--red); color: #fff; }
+
+  .mcu-timecode {
+    font-family: var(--mono);
+    font-size: 20px;
+    color: var(--green);
+    background: #081a10;
+    border: 1px solid #1a5533;
+    border-radius: 6px;
+    padding: 4px 12px;
+    letter-spacing: 2px;
+    margin-left: auto;
+  }
+
+  .mcu-lcd {
+    background: #0a1420;
+    border: 1px solid #1a3050;
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.6;
+    color: #88ccff;
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .mcu-lcd .lcd-label { color: var(--muted); font-size: 10px; }
+
+  .mcu-channels {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 8px;
+  }
+
+  .mcu-ch {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 8px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .mcu-ch-name {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: #fff;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-height: 16px;
+  }
+
+  .mcu-fader-track {
+    width: 6px;
+    height: 80px;
+    background: var(--bg3);
+    border-radius: 3px;
+    position: relative;
+    margin: 4px 0;
+  }
+  .mcu-fader-fill {
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: height 0.15s;
+  }
+
+  .mcu-vu-track {
+    width: 100%;
+    height: 6px;
+    background: var(--bg3);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .mcu-vu-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.15s;
+  }
+  .mcu-vu-low { background: var(--green); }
+  .mcu-vu-mid { background: var(--yellow); }
+  .mcu-vu-high { background: var(--red); }
+
+  .mcu-ch-btns { display: flex; gap: 3px; }
+  .mcu-ch-btn {
+    font-size: 9px;
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-family: var(--mono);
+    border: 1px solid var(--border);
+    background: var(--bg3);
+    color: var(--muted);
+  }
+  .mcu-ch-btn.solo-on { background: #2a2200; color: var(--yellow); border-color: #554400; }
+  .mcu-ch-btn.mute-on { background: #2a0d0d; color: var(--red); border-color: #551a1a; }
+  .mcu-ch-btn.rec-on  { background: #2a0d0d; color: var(--red); border-color: #551a1a; }
+
+  .mcu-fader-db {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  .mcu-info-row {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .mcu-info-item {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+  .mcu-info-label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .mcu-info-value { font-family: var(--mono); color: var(--text); margin-top: 2px; }
+
+  /* ── Song Watcher panel ──────────────────────────────────────────────────── */
+  .watcher-panel { padding: 16px 20px; }
+
+  .watcher-status-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .watcher-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    flex: 1;
+    min-width: 160px;
+  }
+  .watcher-card-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
+  .watcher-card-value { font-family: var(--mono); font-size: 14px; color: #fff; margin-top: 4px; }
+
+  .diff-block {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-top: 12px;
+  }
+  .diff-block h3 { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 10px; }
+  .diff-item {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 3px 0;
+  }
+  .diff-add { color: var(--green); }
+  .diff-remove { color: var(--red); }
+  .diff-change { color: var(--yellow); }
 </style>
 </head>
 <body>
@@ -368,12 +550,16 @@
 
     <div class="tabs" id="tabs">
       <div class="tab active" data-tab="log">Action Log</div>
+      <div class="tab" data-tab="mcu">MCU Bridge</div>
+      <div class="tab" data-tab="watcher">Song Watcher</div>
       <div class="tab" data-tab="tools">All Tools</div>
       <div class="tab" data-tab="workspace">Workspace</div>
     </div>
 
     <div id="tab-content">
       <div id="pane-log"></div>
+      <div id="pane-mcu" style="display:none"></div>
+      <div id="pane-watcher" style="display:none"></div>
       <div id="pane-tools" style="display:none"></div>
       <div id="pane-workspace" style="display:none"></div>
     </div>
@@ -389,12 +575,13 @@ let logFilter = 'all';
 let activeFamily = null;
 
 // ── Tabs ───────────────────────────────────────────────────────────────────────
+const ALL_TABS = ['log','mcu','watcher','tools','workspace'];
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     tab.classList.add('active');
     const name = tab.dataset.tab;
-    ['log','tools','workspace'].forEach(p => {
+    ALL_TABS.forEach(p => {
       document.getElementById('pane-' + p).style.display = p === name ? '' : 'none';
     });
   });
@@ -423,6 +610,8 @@ function render() {
   renderCards();
   renderSidebar();
   renderLog();
+  renderMcu();
+  renderWatcher();
   renderTools();
   renderWorkspace();
 }
@@ -471,21 +660,37 @@ function renderCards() {
   const bridgeLabel = phase === 'runtime_verified' ? 'live verified' : bridge === 'ready' ? 'Ready' : phase;
   const capabilityCount = Object.values(status.bridge.capabilities || {}).filter(Boolean).length;
 
+  const mcu = status.mcuBridge || {};
+  const mcuConnected = mcu.connected === true;
+  const mcuClass = mcuConnected ? 'bridge-ok' : '';
+  const mcuLabel = mcuConnected ? 'Connected' : 'Disconnected';
+  const mcuSub = mcuConnected
+    ? `${mcu.messageCount || 0} msgs · bank ${(mcu.bankOffset || 0) / 8 + 1}`
+    : 'loopMIDI required';
+
+  const watcher = status.songWatcher || {};
+  const watcherActive = watcher.active === true;
+  const watcherClass = watcherActive ? 'bridge-ok' : '';
+  const watcherLabel = watcherActive ? 'Watching' : 'Inactive';
+  const watcherSub = watcherActive
+    ? `${watcher.snapshotCount || 0} snapshots`
+    : 'Use s1_watch_session';
+
   document.getElementById('cards').innerHTML = `
     <div class="card accent">
       <div class="card-title">Tool Calls</div>
       <div class="card-value">${status.stats.toolCallsThisSession}</div>
       <div class="card-sub">this session</div>
     </div>
-    <div class="card ${bridgeClass}">
-      <div class="card-title">Studio One Bridge</div>
-      <div class="card-value">${bridgeLabel}</div>
-      <div class="card-sub">${phase}${handshakeOk ? ' · handshake ok' : ' · not verified'}</div>
+    <div class="card ${mcuClass}" style="cursor:pointer" onclick="switchTab('mcu')">
+      <div class="card-title">MCU Bridge</div>
+      <div class="card-value">${mcuLabel}</div>
+      <div class="card-sub">${mcuSub}</div>
     </div>
-    <div class="card">
-      <div class="card-title">Capabilities</div>
-      <div class="card-value">${capabilityCount}</div>
-      <div class="card-sub">reported by handshake</div>
+    <div class="card ${watcherClass}" style="cursor:pointer" onclick="switchTab('watcher')">
+      <div class="card-title">Song Watcher</div>
+      <div class="card-value">${watcherLabel}</div>
+      <div class="card-sub">${watcherSub}</div>
     </div>
     <div class="card">
       <div class="card-title">Tools Available</div>
@@ -516,17 +721,20 @@ function renderSidebar() {
   `).join('');
 }
 
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === name);
+  });
+  ALL_TABS.forEach(p => {
+    document.getElementById('pane-' + p).style.display = p === name ? '' : 'none';
+  });
+}
+
 function filterFamily(f) {
   activeFamily = activeFamily === f ? null : f;
   renderSidebar();
   renderTools();
-  // Switch to tools tab
-  document.querySelectorAll('.tab').forEach(t => {
-    t.classList.toggle('active', t.dataset.tab === 'tools');
-  });
-  ['log','tools','workspace'].forEach(p => {
-    document.getElementById('pane-' + p).style.display = p === 'tools' ? '' : 'none';
-  });
+  switchTab('tools');
 }
 
 function renderLog() {
@@ -605,6 +813,186 @@ function renderTools() {
     </div>`;
 }
 
+function faderToDb(normalized) {
+  if (normalized <= 0) return '-inf';
+  if (normalized >= 1) return '+6.0';
+  const db = 20 * Math.log10(normalized) * 1.5 - 6;
+  return db > 0 ? '+' + db.toFixed(1) : db.toFixed(1);
+}
+
+function renderMcu() {
+  const mcu = status.mcuBridge || {};
+  const channels = mcu.channels || [];
+  const transport = mcu.transport || {};
+
+  if (!mcu.connected) {
+    document.getElementById('pane-mcu').innerHTML = `
+      <div class="mcu-panel">
+        <div class="mcu-info-row">
+          <div class="mcu-info-item">
+            <div class="mcu-info-label">Status</div>
+            <div class="mcu-info-value" style="color:var(--red)">Disconnected</div>
+          </div>
+        </div>
+        <div class="diff-block">
+          <h3>Setup Required</h3>
+          <div style="font-size:12px;color:var(--text);line-height:1.8">
+            <div>1. Install <strong>loopMIDI</strong> (free virtual MIDI driver)</div>
+            <div>2. Create a virtual port named <code style="color:var(--accent)">Fornix MCU</code></div>
+            <div>3. In Studio One: Options → External Devices → Add → Mackie Control</div>
+            <div>4. Set both Send To and Receive From to <code style="color:var(--accent)">Fornix MCU</code></div>
+            <div>5. Use <code style="color:var(--accent)">mcu_connect</code> tool to connect</div>
+          </div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const transportBtns = [
+    { key: 'rewinding', label: 'REW', cls: '' },
+    { key: 'forwarding', label: 'FWD', cls: '' },
+    { key: 'playing', label: 'PLAY', cls: '' },
+    { key: 'recording', label: 'REC', cls: 'rec-' },
+  ];
+
+  const channelHtml = channels.map((ch, i) => {
+    const faderPct = Math.round((ch.fader || 0) * 100);
+    const vuPct = Math.round(((ch.vu || 0) / 12) * 100);
+    const vuClass = ch.vu > 10 ? 'mcu-vu-high' : ch.vu > 7 ? 'mcu-vu-mid' : 'mcu-vu-low';
+    return `<div class="mcu-ch">
+      <div class="mcu-ch-name">${ch.name || '—'}</div>
+      <div class="mcu-fader-track"><div class="mcu-fader-fill" style="height:${faderPct}%"></div></div>
+      <div class="mcu-fader-db">${faderToDb(ch.fader || 0)}</div>
+      <div class="mcu-vu-track"><div class="mcu-vu-fill ${vuClass}" style="width:${vuPct}%"></div></div>
+      <div class="mcu-ch-btns">
+        <span class="mcu-ch-btn ${ch.solo?'solo-on':''}">S</span>
+        <span class="mcu-ch-btn ${ch.mute?'mute-on':''}">M</span>
+        <span class="mcu-ch-btn ${ch.recArm?'rec-on':''}">R</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('pane-mcu').innerHTML = `
+    <div class="mcu-panel">
+      <div class="mcu-info-row">
+        <div class="mcu-info-item">
+          <div class="mcu-info-label">Input</div>
+          <div class="mcu-info-value">${mcu.inputPort || '—'}</div>
+        </div>
+        <div class="mcu-info-item">
+          <div class="mcu-info-label">Output</div>
+          <div class="mcu-info-value">${mcu.outputPort || '—'}</div>
+        </div>
+        <div class="mcu-info-item">
+          <div class="mcu-info-label">Messages</div>
+          <div class="mcu-info-value">${mcu.messageCount || 0}</div>
+        </div>
+        <div class="mcu-info-item">
+          <div class="mcu-info-label">Bank</div>
+          <div class="mcu-info-value">Ch ${(mcu.bankOffset||0)+1}–${(mcu.bankOffset||0)+8}</div>
+        </div>
+        <div class="mcu-info-item">
+          <div class="mcu-info-label">Last message</div>
+          <div class="mcu-info-value">${mcu.lastMessageAt ? new Date(mcu.lastMessageAt).toLocaleTimeString() : '—'}</div>
+        </div>
+      </div>
+
+      <div class="mcu-transport">
+        ${transportBtns.map(b => `<div class="mcu-transport-btn ${transport[b.key] ? (b.cls + 'active') : ''}">${b.label}</div>`).join('')}
+        <div class="mcu-timecode">${mcu.timecode || '00:00:00:00'}</div>
+      </div>
+
+      <div class="mcu-lcd">
+        <span class="lcd-label">LCD Top: </span>${escHtml(mcu.lcdTop || '')}\n<span class="lcd-label">LCD Bot: </span>${escHtml(mcu.lcdBottom || '')}
+      </div>
+
+      <div class="section-title">Channel Strips</div>
+      <div class="mcu-channels">${channelHtml}</div>
+    </div>`;
+}
+
+function renderWatcher() {
+  const watcher = status.songWatcher || {};
+
+  if (!watcher.active) {
+    document.getElementById('pane-watcher').innerHTML = `
+      <div class="watcher-panel">
+        <div class="watcher-status-row">
+          <div class="watcher-card">
+            <div class="watcher-card-label">Status</div>
+            <div class="watcher-card-value" style="color:var(--muted)">Inactive</div>
+          </div>
+        </div>
+        <div class="diff-block">
+          <h3>Song Watcher</h3>
+          <div style="font-size:12px;color:var(--text);line-height:1.8">
+            <div>Monitors .song files for changes and provides session diffs.</div>
+            <div style="margin-top:8px">Use <code style="color:var(--accent)">s1_watch_session</code> to start watching a song file or directory.</div>
+            <div>Use <code style="color:var(--accent)">s1_session_snapshot</code> to see current state.</div>
+            <div>Use <code style="color:var(--accent)">s1_session_diff</code> to see changes between saves.</div>
+          </div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const diff = watcher.lastDiff;
+  let diffHtml = '<div style="color:var(--muted);font-size:12px">No changes detected yet. Save your song in S1 to see diffs.</div>';
+
+  if (diff) {
+    const items = [];
+    if (diff.tracksAdded?.length)   diff.tracksAdded.forEach(t => items.push(`<div class="diff-item diff-add">+ Track: ${escHtml(t)}</div>`));
+    if (diff.tracksRemoved?.length) diff.tracksRemoved.forEach(t => items.push(`<div class="diff-item diff-remove">- Track: ${escHtml(t)}</div>`));
+    if (diff.tempoChanged)          items.push(`<div class="diff-item diff-change">~ Tempo: ${diff.tempoChanged.from} → ${diff.tempoChanged.to}</div>`);
+    if (diff.timeSignatureChanged)  items.push(`<div class="diff-item diff-change">~ Time sig: ${diff.timeSignatureChanged.from} → ${diff.timeSignatureChanged.to}</div>`);
+    if (diff.markersAdded?.length)   diff.markersAdded.forEach(m => items.push(`<div class="diff-item diff-add">+ Marker: ${escHtml(m)}</div>`));
+    if (diff.markersRemoved?.length) diff.markersRemoved.forEach(m => items.push(`<div class="diff-item diff-remove">- Marker: ${escHtml(m)}</div>`));
+    if (diff.markersMoved?.length)   diff.markersMoved.forEach(m => items.push(`<div class="diff-item diff-change">~ Marker "${escHtml(m.name)}": bar ${m.fromBar} → ${m.toBar}</div>`));
+    if (items.length) {
+      diffHtml = items.join('');
+      if (diff.summary) diffHtml += `<div style="margin-top:8px;font-size:11px;color:var(--muted)">${escHtml(diff.summary)}</div>`;
+    }
+  }
+
+  const songName = watcher.songFile ? watcher.songFile.split(/[/\\]/).pop() : '—';
+
+  document.getElementById('pane-watcher').innerHTML = `
+    <div class="watcher-panel">
+      <div class="watcher-status-row">
+        <div class="watcher-card">
+          <div class="watcher-card-label">Status</div>
+          <div class="watcher-card-value" style="color:var(--green)"><span class="live-dot"></span> Active</div>
+        </div>
+        <div class="watcher-card">
+          <div class="watcher-card-label">Song File</div>
+          <div class="watcher-card-value">${escHtml(songName)}</div>
+        </div>
+        <div class="watcher-card">
+          <div class="watcher-card-label">Snapshots</div>
+          <div class="watcher-card-value">${watcher.snapshotCount || 0}</div>
+        </div>
+        <div class="watcher-card">
+          <div class="watcher-card-label">Last Parsed</div>
+          <div class="watcher-card-value">${watcher.lastParsedAt ? new Date(watcher.lastParsedAt).toLocaleTimeString() : '—'}</div>
+        </div>
+      </div>
+
+      <div class="diff-block">
+        <h3>Last Diff</h3>
+        ${diffHtml}
+      </div>
+
+      <div class="diff-block" style="margin-top:12px">
+        <h3>Watch Path</h3>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--text)">${escHtml(watcher.watchPath || '—')}</div>
+      </div>
+    </div>`;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
 function renderWorkspace() {
   const dirs = status.workspace.allowedDirs || [];
   const git = status.git;
@@ -671,7 +1059,11 @@ function renderWorkspace() {
 
 // ── Auto-refresh ───────────────────────────────────────────────────────────────
 fetchAll();
-setInterval(fetchAll, 8000);
+// Normal refresh every 5s; MCU tab refreshes faster (2s) for live VU/fader data
+setInterval(() => {
+  const mcuActive = document.querySelector('.tab.active')?.dataset.tab === 'mcu';
+  fetchAll();
+}, 3000);
 </script>
 </body>
 </html>
