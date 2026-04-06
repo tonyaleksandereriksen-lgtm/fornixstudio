@@ -55,6 +55,13 @@ let _onChangeCallbacks: Array<(snap: SongSnapshot, diff: SongDiff | null) => voi
 let _debounceTimer: ReturnType<typeof setTimeout> | null = null;
 const DEBOUNCE_MS = 1500;
 
+/** Match .song and .song.autosave files */
+function isSongFile(filePath: string): boolean {
+  const lower = filePath.toLowerCase();
+  return lower.endsWith(".song") || lower.endsWith(".song.autosave");
+}
+
+
 // ─── Diffing ──────────────────────────────────────────────────────────────────
 
 function diffSnapshots(prev: SongSnapshot, curr: SongSnapshot): SongDiff {
@@ -178,7 +185,7 @@ export function startWatching(targetPath: string): { ok: boolean; message: strin
   const stat = fs.statSync(resolved);
   let watchGlob: string;
 
-  if (stat.isFile() && resolved.toLowerCase().endsWith(".song")) {
+  if (stat.isFile() && isSongFile(resolved)) {
     watchGlob = resolved;
     _watchPath = path.dirname(resolved);
     // Do an initial parse immediately
@@ -190,7 +197,7 @@ export function startWatching(targetPath: string): { ok: boolean; message: strin
       process.stderr.write(`[watcher] Initial parse: ${path.basename(resolved)} — ${snap.result.tracks.length} tracks, tempo ${snap.result.tempo ?? "?"}\n`);
     }
   } else if (stat.isDirectory()) {
-    watchGlob = path.join(resolved, "**/*.song");
+    watchGlob = path.join(resolved, "**/*.song{,.autosave}");
     _watchPath = resolved;
 
     // Find and parse the most recent .song file immediately
@@ -216,13 +223,13 @@ export function startWatching(targetPath: string): { ok: boolean; message: strin
   });
 
   _watcher.on("change", (fp) => {
-    if (typeof fp === "string" && fp.toLowerCase().endsWith(".song")) {
+    if (typeof fp === "string" && isSongFile(fp)) {
       handleFileChange(fp);
     }
   });
 
   _watcher.on("add", (fp) => {
-    if (typeof fp === "string" && fp.toLowerCase().endsWith(".song")) {
+    if (typeof fp === "string" && isSongFile(fp)) {
       handleFileChange(fp);
     }
   });
@@ -230,7 +237,7 @@ export function startWatching(targetPath: string): { ok: boolean; message: strin
   const songCount = _current ? 1 : 0;
   return {
     ok: true,
-    message: `Watching ${resolved} for .song changes` +
+    message: `Watching ${resolved} for .song/.autosave changes` +
       (songCount > 0 ? ` (initial snapshot: ${path.basename(_songFile!)})` : ""),
   };
 }
@@ -282,7 +289,7 @@ function findSongFiles(dir: string, maxDepth = 3): string[] {
       const entries = fs.readdirSync(current, { withFileTypes: true });
       for (const entry of entries) {
         const full = path.join(current, entry.name);
-        if (entry.isFile() && entry.name.toLowerCase().endsWith(".song")) {
+        if (entry.isFile() && isSongFile(entry.name)) {
           results.push(full);
         } else if (entry.isDirectory() && !entry.name.startsWith(".")) {
           walk(full, depth + 1);
