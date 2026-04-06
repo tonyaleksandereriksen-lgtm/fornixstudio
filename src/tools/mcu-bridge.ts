@@ -17,12 +17,9 @@ import {
   sendMute,
   sendBankLeft,
   sendBankRight,
-  sendMidi,
+  sendButton,
 } from "../services/mcu-bridge.js";
-import {
-  buildButtonPress,
-  MCU_BUTTONS,
-} from "../services/mcu-protocol.js";
+import { MCU_BUTTONS } from "../services/mcu-protocol.js";
 import { logAction, formatToolResult, truncate } from "../services/logger.js";
 
 export function registerMcuBridgeTools(server: McpServer): void {
@@ -150,6 +147,7 @@ export function registerMcuBridgeTools(server: McpServer): void {
       "═══ MCU Bridge State ═══",
       "",
       `Ports: in="${state.inputPort}" out="${state.outputPort}"`,
+      `Handshake: ${state.handshakeOk ? "OK — S1 is streaming" : "PENDING — waiting for S1"}`,
       `Messages received: ${state.messageCount}`,
       `Last message: ${state.lastMessageAt ?? "never"}`,
       `Bank offset: ${state.bankOffset} (showing tracks ${state.bankOffset + 1}–${state.bankOffset + 8})`,
@@ -335,7 +333,7 @@ export function registerMcuBridgeTools(server: McpServer): void {
     if (!isMcuConnected()) {
       return { content: [{ type: "text", text: "✗ MCU bridge not connected." }], isError: true };
     }
-    const ok = sendMidi(buildButtonPress(MCU_BUTTONS.SAVE));
+    const ok = sendButton(MCU_BUTTONS.SAVE);
     logAction({ tool: "mcu_save", action: "s1_bridge", summary: "Save project", dryRun: false, ok });
     return { content: [{ type: "text", text: ok ? "✓ Save command sent" : "✗ Failed to send save" }], isError: !ok };
   });
@@ -351,7 +349,7 @@ export function registerMcuBridgeTools(server: McpServer): void {
     if (!isMcuConnected()) {
       return { content: [{ type: "text", text: "✗ MCU bridge not connected." }], isError: true };
     }
-    const ok = sendMidi(buildButtonPress(MCU_BUTTONS.UNDO));
+    const ok = sendButton(MCU_BUTTONS.UNDO);
     logAction({ tool: "mcu_undo", action: "s1_bridge", summary: "Undo", dryRun: false, ok });
     return { content: [{ type: "text", text: ok ? "✓ Undo sent" : "✗ Failed" }], isError: !ok };
   });

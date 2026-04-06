@@ -273,7 +273,7 @@ export function registerArrangementTools(server: McpServer): void {
       if (isReadOnly(abs)) throw new Error(`${abs} is in a read-only directory`);
       fs.mkdirSync(abs, { recursive: true });
 
-      let sections =
+      const sections =
         preset === "hardstyle" ? HARDSTYLE_SECTIONS.map(s => ({ name: s.name, bars: s.defaultLength, notes: "" })) :
         preset === "custom" ? (customSections ?? []) :
         [

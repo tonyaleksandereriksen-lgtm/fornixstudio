@@ -49,7 +49,7 @@ let _current: SongSnapshot | null = null;
 let _previous: SongSnapshot | null = null;
 let _lastDiff: SongDiff | null = null;
 let _snapshotCount = 0;
-let _onChangeCallbacks: Array<(snap: SongSnapshot, diff: SongDiff | null) => void> = [];
+const _onChangeCallbacks: Array<(snap: SongSnapshot, diff: SongDiff | null) => void> = [];
 
 // Debounce: S1 may write the file in multiple passes
 let _debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -60,7 +60,6 @@ function isSongFile(filePath: string): boolean {
   const lower = filePath.toLowerCase();
   return lower.endsWith(".song") || lower.endsWith(".song.autosave");
 }
-
 
 // ─── Diffing ──────────────────────────────────────────────────────────────────
 

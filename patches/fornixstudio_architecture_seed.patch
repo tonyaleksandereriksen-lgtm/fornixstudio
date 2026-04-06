@@ -1,0 +1,255 @@
+diff --git a/src/daw/types.ts b/src/daw/types.ts
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/src/daw/types.ts
+@@ -0,0 +1,106 @@
++export type DawCapabilityLevel = "none" | "read" | "write";
++export type DawCapabilityStatus = "proven" | "partial" | "blocked" | "unknown";
++
++export interface DawCapability {
++  name:
++    | "session.read"
++    | "session.write"
++    | "arrangement.read"
++    | "arrangement.write"
++    | "transport.control"
++    | "track.control"
++    | "plugin.context"
++    | "audio.capture"
++    | "render.read"
++    | "rollback";
++  level: DawCapabilityLevel;
++  status: DawCapabilityStatus;
++  source: "adapter" | "probe" | "config" | "inference";
++  note?: string;
++}
++
++export interface DawSectionSummary {
++  id: string;
++  name: string;
++}
++
++export interface DawTrackSummary {
++  id: string;
++  name: string;
++  kind?: string;
++}
++
++export interface DawSessionSnapshot {
++  dawId: string;
++  sessionId: string;
++  title?: string;
++  tempo?: number;
++  key?: string;
++  timeSignature?: string;
++  selectedSectionId?: string;
++  sections: DawSectionSummary[];
++  tracks: DawTrackSummary[];
++  warnings: string[];
++  capturedAt: string;
++}
++
++export interface ActionPreview {
++  actionId: string;
++  title: string;
++  summary: string;
++  requires: string[];
++  canApply: boolean;
++  canRollback: boolean;
++  warnings: string[];
++}
++
++export interface ApplyRequest {
++  actionId: string;
++  dryRun?: boolean;
++  input?: Record<string, unknown>;
++}
++
++export interface ApplyResult {
++  actionId: string;
++  applied: boolean;
++  summary: string;
++  rollbackToken?: string;
++  warnings: string[];
++}
++
++export interface RollbackResult {
++  ok: boolean;
++  summary: string;
++  warnings: string[];
++}
++
++export interface DawAdapter {
++  id: string;
++  getCapabilities(): Promise<DawCapability[]>;
++  getSessionSnapshot(): Promise<DawSessionSnapshot>;
++  previewAction(
++    actionId: string,
++    session: DawSessionSnapshot,
++  ): Promise<ActionPreview>;
++  applyAction(request: ApplyRequest): Promise<ApplyResult>;
++  rollback?(token: string): Promise<RollbackResult>;
++}
+diff --git a/src/daw/capabilities.ts b/src/daw/capabilities.ts
+new file mode 100644
+index 0000000..2222222
+--- /dev/null
++++ b/src/daw/capabilities.ts
+@@ -0,0 +1,47 @@
++import type { DawCapability } from "./types";
++
++export function hasCapability(
++  capabilities: DawCapability[],
++  name: DawCapability["name"],
++  minimumLevel: DawCapability["level"] = "read",
++): boolean {
++  const found = capabilities.find((cap) => cap.name === name);
++  if (!found || found.status === "blocked") {
++    return false;
++  }
++
++  const rank = { none: 0, read: 1, write: 2 } as const;
++  return rank[found.level] >= rank[minimumLevel];
++}
++
++export function summarizeCapabilities(capabilities: DawCapability[]): string[] {
++  return capabilities.map((cap) => {
++    const parts = [cap.name, `${cap.level}/${cap.status}`];
++    if (cap.note) {
++      parts.push(cap.note);
++    }
++    return parts.join(" - ");
++  });
++}
+diff --git a/src/producer/intents.ts b/src/producer/intents.ts
+new file mode 100644
+index 0000000..3333333
+--- /dev/null
++++ b/src/producer/intents.ts
+@@ -0,0 +1,44 @@
++export type ProducerIntentId =
++  | "critique-drop"
++  | "prepare-mastering"
++  | "suggest-arrangement";
++
++export interface ProducerIntentInput {
++  id: ProducerIntentId;
++  targetSectionId?: string;
++}
++
++export interface ProducerSuggestion {
++  id: string;
++  title: string;
++  rationale: string;
++  confidence: "low" | "medium" | "high";
++  actionId?: string;
++}
++
++export interface ProducerPlan {
++  title: string;
++  summary: string;
++  warnings: string[];
++  suggestions: ProducerSuggestion[];
++}
+diff --git a/src/producer/orchestrator.ts b/src/producer/orchestrator.ts
+new file mode 100644
+index 0000000..4444444
+--- /dev/null
++++ b/src/producer/orchestrator.ts
+@@ -0,0 +1,92 @@
++import { hasCapability, summarizeCapabilities } from "../daw/capabilities";
++import type { DawAdapter } from "../daw/types";
++import type { ProducerIntentInput, ProducerPlan } from "./intents";
++
++export async function buildProducerPlan(
++  adapter: DawAdapter,
++  input: ProducerIntentInput,
++): Promise<ProducerPlan> {
++  const [capabilities, session] = await Promise.all([
++    adapter.getCapabilities(),
++    adapter.getSessionSnapshot(),
++  ]);
++
++  const capabilityWarnings = summarizeCapabilities(capabilities).length
++    ? []
++    : ["No DAW capabilities were reported by the active adapter."];
++
++  if (input.id === "critique-drop") {
++    const target =
++      input.targetSectionId ??
++      session.selectedSectionId ??
++      session.sections.find((section) =>
++        /drop|chorus|hook/i.test(section.name),
++      )?.id;
++
++    return {
++      title: "Critique this drop",
++      summary: target
++        ? `Review section ${target} with a preview-first critique plan.`
++        : "No target section was detected. Fall back to a whole-song critique.",
++      warnings: [
++        ...capabilityWarnings,
++        ...(!hasCapability(capabilities, "session.read")
++          ? ["Session read is not proven. Use a conservative, non-destructive critique flow."]
++          : []),
++      ],
++      suggestions: [
++        {
++          id: "drop-impact",
++          title: "Check impact and contrast",
++          rationale:
++            "Compare density, low-end handoff, and release against the pre-drop transition.",
++          confidence: "high",
++        },
++        {
++          id: "drop-hook",
++          title: "Audit hook clarity",
++          rationale:
++            "Look for lead masking, over-stacked layers, and weak rhythmic anchors.",
++          confidence: "medium",
++        },
++      ],
++    };
++  }
++
++  return {
++    title: "Prepare for mastering",
++    summary: "Create a conservative mastering-prep checklist and previewable actions.",
++    warnings: [
++      ...capabilityWarnings,
++      ...(!hasCapability(capabilities, "session.read")
++        ? ["Session read is not proven. Use export/package guidance instead of live edits."]
++        : []),
++    ],
++    suggestions: [
++      {
++        id: "master-headroom",
++        title: "Verify headroom and clipping risk",
++        rationale:
++          "Check for limiter dependency, master bus overload, and final export headroom.",
++        confidence: "high",
++      },
++      {
++        id: "master-export",
++        title: "Prepare handoff/export settings",
++        rationale:
++          "Generate a clean print checklist, tail policy, and version naming plan.",
++        confidence: "high",
++      },
++    ],
++  };
++}
+diff --git a/package.json b/package.json
+index 5555555..6666666 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,11 @@
+ {
+   "scripts": {
+-    "test:bridge": "node --test tests/bridge/bridge-cleanup.test.js tests/bridge/bridge-handshake.test.js"
++    "lint": "tsc --noEmit",
++    "lint:fix": "npm run lint",
++    "test:bridge": "node --test tests/bridge/bridge-cleanup.test.js tests/bridge/bridge-handshake.test.js tests/bridge/bridge-write-gate.test.js"
+   }
+ }

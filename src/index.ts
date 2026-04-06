@@ -1,5 +1,7 @@
 // ─── Fornix Studio MCP – Main Entry Point ────────────────────────────────────
 
+import path from "path";
+import { fileURLToPath } from "url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
@@ -31,8 +33,12 @@ import { registerWorkspaceProfileTools } from "./tools/workspace-profile.js";
 import { registerArrangementAnalysisTools } from "./tools/arrangement.js";
 import { registerSongWatcherTools } from "./tools/song-watcher.js";
 import { registerMcuBridgeTools } from "./tools/mcu-bridge.js";
+import { registerProducerTools } from "./tools/producer.js";
 
-const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT ?? process.cwd();
+// Derive project root from script location (dist/index.js → project root),
+// so allowedDirs "." resolves correctly regardless of process.cwd().
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const WORKSPACE_ROOT = process.env.WORKSPACE_ROOT ?? path.resolve(__dirname, "..");
 
 function instrumentToolRegistration(server: McpServer): void {
   const rawServer = server as unknown as {
@@ -91,17 +97,24 @@ async function main(): Promise<void> {
   registerSoundDesignTools(server);
   registerSessionTools(server);
   registerProductionPackageTools(server);
-  registerTransportTools(server);
-  registerTrackTools(server);
-  registerPluginTools(server);
+  // Bridge-gated S1 tools: only register when bridge is enabled.
+  // These tools always error when isBridgeReady() is false, so registering
+  // them with bridge disabled just pollutes the MCP client tool list.
+  if (cfg.s1BridgeEnabled) {
+    registerTransportTools(server);
+    registerTrackTools(server);
+    registerPluginTools(server);
+    registerMidiTools(server);
+    registerArrangementTools(server);
+    registerAutomationTools(server);
+  }
+  // Fallback tools (file-based S1 workflows) always available
   registerFallbackTools(server);
-  registerMidiTools(server);
-  registerArrangementTools(server);
-  registerAutomationTools(server);
   registerWorkspaceProfileTools(server);
   registerArrangementAnalysisTools(server);
   registerSongWatcherTools(server);
   registerMcuBridgeTools(server);
+  registerProducerTools(server);
 
   const familyCount = new Set(TOOL_MANIFEST.map((tool) => tool.family)).size;
   process.stderr.write(`[init] ${TOOL_MANIFEST.length} tools ready across ${familyCount} families.\n`);

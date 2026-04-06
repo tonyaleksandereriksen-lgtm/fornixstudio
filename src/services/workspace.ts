@@ -41,7 +41,7 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig {
 
       return _config;
     } catch (e) {
-      throw new Error(`Failed to parse ${WORKSPACE_CONFIG_FILENAME}: ${e}`);
+      throw new Error(`Failed to parse ${WORKSPACE_CONFIG_FILENAME}: ${e}`, { cause: e });
     }
   }
 

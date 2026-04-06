@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fornix Studio — Producer Plan</title>
+<style>
+  :root {
+    --bg: #0e0e12;
+    --surface: #16161c;
+    --border: #2a2a36;
+    --text: #d4d4e0;
+    --muted: #7a7a8c;
+    --accent: #a78bfa;
+    --accent-dim: #6d5aad;
+    --warn: #f59e0b;
+    --ok: #34d399;
+    --bad: #f87171;
+    --preview-bg: #1c1626;
+    --preview-border: #3b2d5c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+  .container { max-width: 720px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+  /* Header */
+  .header { margin-bottom: 2rem; }
+  .header h1 { font-size: 1.25rem; font-weight: 600; color: var(--accent); }
+  .header .subtitle { font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem; }
+
+  /* Preview badge */
+  .preview-badge {
+    display: inline-block;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: var(--preview-bg);
+    border: 1px solid var(--preview-border);
+    border-radius: 4px;
+    padding: 2px 8px;
+    margin-left: 0.75rem;
+    vertical-align: middle;
+  }
+
+  /* Intent selector */
+  .intent-bar {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+  }
+  .intent-btn {
+    font-size: 0.75rem;
+    padding: 6px 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .intent-btn:hover { border-color: var(--accent-dim); color: var(--text); }
+  .intent-btn.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--preview-bg);
+  }
+
+  /* Section input */
+  .section-input {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    align-items: center;
+  }
+  .section-input label { font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
+  .section-input input {
+    flex: 1;
+    max-width: 200px;
+    font-size: 0.8rem;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--surface);
+    color: var(--text);
+    outline: none;
+  }
+  .section-input input:focus { border-color: var(--accent-dim); }
+
+  /* Cards */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+  }
+  .card-title {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.75rem;
+  }
+
+  /* Plan header */
+  .plan-title { font-size: 1.1rem; font-weight: 600; color: var(--text); }
+  .plan-intent { font-size: 0.75rem; color: var(--accent); margin-top: 0.25rem; }
+  .plan-summary { font-size: 0.85rem; color: var(--text); margin-top: 0.75rem; line-height: 1.5; }
+  .plan-analysis {
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin-top: 0.5rem;
+  }
+  .plan-analysis .live { color: var(--ok); }
+  .plan-meta { font-size: 0.7rem; color: var(--muted); margin-top: 0.4rem; }
+  .plan-meta span { margin-right: 1rem; }
+  .action-state {
+    font-size: 0.6rem;
+    color: var(--muted);
+    margin-top: 0.15rem;
+    padding-left: 1.5rem;
+    font-style: italic;
+  }
+
+  /* Target section */
+  .target { display: flex; gap: 1rem; flex-wrap: wrap; }
+  .target-field { font-size: 0.8rem; }
+  .target-label { color: var(--muted); font-size: 0.7rem; }
+  .target-value { color: var(--text); font-weight: 500; }
+
+  /* Warnings */
+  .warning-list { list-style: none; }
+  .warning-list li {
+    font-size: 0.8rem;
+    color: var(--warn);
+    padding: 4px 0;
+    padding-left: 1.2rem;
+    position: relative;
+  }
+  .warning-list li::before {
+    content: "\26A0";
+    position: absolute;
+    left: 0;
+  }
+
+  /* Suggestions */
+  .suggestion {
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .suggestion:last-child { border-bottom: none; }
+  .suggestion-header { display: flex; align-items: center; gap: 0.5rem; }
+  .suggestion-num {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--muted);
+    min-width: 1.5rem;
+  }
+  .suggestion-title { font-size: 0.85rem; font-weight: 500; color: var(--text); }
+  .confidence {
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-left: auto;
+    white-space: nowrap;
+  }
+  .confidence.high { color: var(--ok); background: rgba(52, 211, 153, 0.12); }
+  .confidence.medium { color: var(--warn); background: rgba(245, 158, 11, 0.12); }
+  .confidence.low { color: var(--bad); background: rgba(248, 113, 113, 0.12); }
+  .suggestion-rationale {
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin-top: 0.35rem;
+    padding-left: 1.5rem;
+    line-height: 1.5;
+  }
+  .suggestion-bars {
+    font-size: 0.7rem;
+    color: var(--accent-dim);
+    margin-top: 0.2rem;
+    padding-left: 1.5rem;
+  }
+
+  /* Capabilities */
+  .cap-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.25rem 1rem; }
+  .cap-item { font-size: 0.75rem; display: flex; align-items: center; gap: 0.4rem; }
+  .cap-badge {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .cap-badge.proven { background: var(--ok); }
+  .cap-badge.partial { background: var(--warn); }
+  .cap-badge.blocked { background: var(--bad); }
+  .cap-badge.unknown { background: var(--muted); }
+  .cap-name { color: var(--text); }
+  .cap-level { color: var(--muted); }
+
+  /* Loading / error */
+  .loading { text-align: center; padding: 3rem; color: var(--muted); font-size: 0.85rem; }
+  .error-msg { color: var(--bad); font-size: 0.85rem; padding: 1rem; }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    padding-top: 2rem;
+    font-size: 0.65rem;
+    color: var(--muted);
+  }
+  .footer a { color: var(--accent-dim); text-decoration: none; }
+  .footer a:hover { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>Fornix Studio <span class="preview-badge">Preview Only</span></h1>
+    <div class="subtitle">Producer Plan — no actions will be executed</div>
+  </div>
+
+  <div class="intent-bar" id="intent-bar"></div>
+
+  <div class="section-input">
+    <label for="section-id">Target section:</label>
+    <input type="text" id="section-id" placeholder="e.g. Drop 1 (optional)">
+  </div>
+
+  <div id="plan-root">
+    <div class="loading">Select an intent above to generate a plan.</div>
+  </div>
+
+  <div class="footer">
+    <a href="/dashboard">Dashboard</a> &middot;
+    <a href="/api/producer-plan?intent=session-overview">Raw JSON</a>
+  </div>
+</div>
+
+<script>
+(function () {
+  const INTENTS = [
+    { id: "critique-drop",        label: "Critique Drop" },
+    { id: "critique-arrangement", label: "Critique Arrangement" },
+    { id: "prepare-mastering",    label: "Prepare Mastering" },
+    { id: "session-overview",     label: "Session Overview" },
+  ];
+
+  const intentBar = document.getElementById("intent-bar");
+  const planRoot = document.getElementById("plan-root");
+  const sectionInput = document.getElementById("section-id");
+  let activeIntent = null;
+
+  // Build intent buttons
+  INTENTS.forEach(function (intent) {
+    var btn = document.createElement("button");
+    btn.className = "intent-btn";
+    btn.textContent = intent.label;
+    btn.dataset.intent = intent.id;
+    btn.addEventListener("click", function () {
+      activeIntent = intent.id;
+      document.querySelectorAll(".intent-btn").forEach(function (b) { b.classList.remove("active"); });
+      btn.classList.add("active");
+      fetchPlan();
+    });
+    intentBar.appendChild(btn);
+  });
+
+  // Debounced section input
+  var sectionTimer = null;
+  sectionInput.addEventListener("input", function () {
+    if (!activeIntent) return;
+    clearTimeout(sectionTimer);
+    sectionTimer = setTimeout(fetchPlan, 600);
+  });
+
+  function fetchPlan() {
+    if (!activeIntent) return;
+    planRoot.innerHTML = '<div class="loading">Loading plan\u2026</div>';
+
+    var url = "/api/producer-plan?intent=" + encodeURIComponent(activeIntent);
+    var section = sectionInput.value.trim();
+    if (section) url += "&section=" + encodeURIComponent(section);
+
+    fetch(url)
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(renderPlan)
+      .catch(function (err) {
+        planRoot.innerHTML = '<div class="error-msg">Failed to load plan: ' + esc(err.message) + '</div>';
+      });
+  }
+
+  function renderPlan(plan) {
+    var html = "";
+
+    // Plan header card
+    html += '<div class="card">';
+    html += '<div class="plan-title">' + esc(plan.title) + '</div>';
+    html += '<div class="plan-intent">' + esc(plan.intentId) + '</div>';
+    html += '<div class="plan-summary">' + esc(plan.summary) + '</div>';
+    html += '<div class="plan-meta">';
+    if (plan.planId) html += '<span>ID: ' + esc(plan.planId) + '</span>';
+    if (plan.generatedAt) html += '<span>' + esc(plan.generatedAt) + '</span>';
+    if (plan.history) html += '<span>' + esc(plan.history.status) + '</span>';
+    html += '</div>';
+    html += '<div class="plan-analysis">';
+    if (plan.analysisAvailable) {
+      html += 'Analysis: <span class="live">live arrangement data</span>';
+    } else {
+      html += 'Analysis: generic guidance (no watcher data)';
+    }
+    html += '</div>';
+    html += '</div>';
+
+    // Target section
+    if (plan.targetSection && plan.targetSection.source !== "none") {
+      var ts = plan.targetSection;
+      html += '<div class="card">';
+      html += '<div class="card-title">Target Section</div>';
+      html += '<div class="target">';
+      html += '<div class="target-field"><div class="target-label">Name</div><div class="target-value">' + esc(ts.name) + '</div></div>';
+      if (ts.startBar > 0) html += '<div class="target-field"><div class="target-label">Start</div><div class="target-value">Bar ' + ts.startBar + '</div></div>';
+      if (ts.lengthBars > 0) html += '<div class="target-field"><div class="target-label">Length</div><div class="target-value">' + ts.lengthBars + ' bars</div></div>';
+      html += '<div class="target-field"><div class="target-label">Source</div><div class="target-value">' + esc(ts.source) + '</div></div>';
+      html += '</div></div>';
+    }
+
+    // Warnings
+    if (plan.warnings && plan.warnings.length > 0) {
+      html += '<div class="card">';
+      html += '<div class="card-title">Warnings</div>';
+      html += '<ul class="warning-list">';
+      plan.warnings.forEach(function (w) {
+        html += '<li>' + esc(w) + '</li>';
+      });
+      html += '</ul></div>';
+    }
+
+    // Suggestions
+    if (plan.suggestions && plan.suggestions.length > 0) {
+      html += '<div class="card">';
+      html += '<div class="card-title">Suggestions (' + plan.suggestions.length + ')</div>';
+      plan.suggestions.forEach(function (s, i) {
+        html += '<div class="suggestion">';
+        html += '<div class="suggestion-header">';
+        html += '<span class="suggestion-num">' + (i + 1) + '.</span>';
+        html += '<span class="suggestion-title">' + esc(s.title) + '</span>';
+        html += '<span class="confidence ' + s.confidence + '">' + s.confidence + '</span>';
+        html += '</div>';
+        html += '<div class="suggestion-rationale">' + esc(s.rationale) + '</div>';
+        if (s.barRange) {
+          html += '<div class="suggestion-bars">Bars ' + s.barRange.startBar + '\u2013' + s.barRange.endBar + '</div>';
+        }
+        if (s.tags && s.tags.length > 0) {
+          html += '<div class="suggestion-bars">' + s.tags.map(esc).join(', ') + '</div>';
+        }
+        if (s.actionState) {
+          html += '<div class="action-state">' + esc(s.actionState) + '</div>';
+        }
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+
+    // Capability snapshot (full DawCapability objects)
+    if (plan.capabilities && plan.capabilities.length > 0) {
+      html += '<div class="card">';
+      html += '<div class="card-title">Capability Snapshot</div>';
+      html += '<div class="cap-grid">';
+      plan.capabilities.forEach(function (cap) {
+        var status = cap.status || "unknown";
+        html += '<div class="cap-item">';
+        html += '<span class="cap-badge ' + esc(status) + '"></span>';
+        html += '<span class="cap-name">' + esc(cap.name) + '</span>';
+        html += '<span class="cap-level">' + esc(cap.level + '/' + status) + '</span>';
+        html += '</div>';
+      });
+      html += '</div></div>';
+    }
+
+    planRoot.innerHTML = html;
+  }
+
+  function esc(str) {
+    if (!str) return "";
+    var el = document.createElement("span");
+    el.textContent = str;
+    return el.innerHTML;
+  }
+})();
+</script>
+</body>
+</html>

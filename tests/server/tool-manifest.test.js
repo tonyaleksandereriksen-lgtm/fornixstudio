@@ -34,6 +34,7 @@ import { registerWorkspaceProfileTools } from "../../dist/tools/workspace-profil
 import { registerArrangementAnalysisTools } from "../../dist/tools/arrangement.js";
 import { registerSongWatcherTools } from "../../dist/tools/song-watcher.js";
 import { registerMcuBridgeTools } from "../../dist/tools/mcu-bridge.js";
+import { registerProducerTools } from "../../dist/tools/producer.js";
 
 function collectRegisteredNames() {
   const names = [];
@@ -60,6 +61,7 @@ function collectRegisteredNames() {
   registerArrangementAnalysisTools(fakeServer);
   registerSongWatcherTools(fakeServer);
   registerMcuBridgeTools(fakeServer);
+  registerProducerTools(fakeServer);
 
   return names;
 }

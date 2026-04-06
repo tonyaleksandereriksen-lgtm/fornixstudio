@@ -82,7 +82,7 @@ const DEFAULT_CAPABILITIES: S1BridgeCapabilities = {
 
 let _ws: BridgeSocketLike | null = null;
 let _state: S1BridgeStatus = "disconnected";
-let _pendingRequests = new Map<string, PendingRequest>();
+const _pendingRequests = new Map<string, PendingRequest>();
 let _reqCounter = 0;
 let _lastHandshakeAt: string | null = null;
 let _lastPingAt: string | null = null;
@@ -131,7 +131,7 @@ function readLatestStartupMarker(): S1BridgeExtensionEvidence {
     return evidence;
   }
 
-  let files: string[] = [];
+  let files: string[];
   try {
     files = fs.readdirSync(DEFAULT_EXTENSION_LOG_DIR)
       .filter((name) => name.startsWith("startup-") && name.endsWith(".json"))
@@ -188,7 +188,7 @@ function buildBridgeProofStates(): S1BridgeProofStates {
   const liveWriteVerified = _runtimeWriteVerifiedAt !== null;
   const runtimeVerified = liveReadVerified && liveWriteVerified;
 
-  let nextRequiredState: S1BridgeProofStates["nextRequiredState"] = null;
+  let nextRequiredState: S1BridgeProofStates["nextRequiredState"];
   if (!extensionLoaded) nextRequiredState = "extension_loaded";
   else if (!listenerCreated) nextRequiredState = "listener_created";
   else if (!handshakeOk) nextRequiredState = "handshake_ok";
@@ -486,7 +486,7 @@ async function performHandshake(): Promise<void> {
     process.stderr.write(
       `[s1-bridge] Handshake FAILED: ${_lastError?.message ?? "unknown"}\n`,
     );
-    throw new Error(`HANDSHAKE_FAILED: ${_lastError?.message ?? "Bridge handshake failed"}`);
+    throw new Error(`HANDSHAKE_FAILED: ${_lastError?.message ?? "Bridge handshake failed"}`, { cause: error });
   }
 }
 
