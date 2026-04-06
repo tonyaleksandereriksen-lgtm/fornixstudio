@@ -162,11 +162,12 @@ export function incrementToolCall(): void {
   _toolCallCount++;
 }
 
-export function startStatusServer(): void {
+export function startStatusServer(port?: number): void {
   if (_server) {
     return;
   }
 
+  const listenPort = port ?? DASHBOARD_PORT;
   _startTime = Date.now();
 
   _server = http.createServer(async (req, res) => {
@@ -179,7 +180,7 @@ export function startStatusServer(): void {
       return;
     }
 
-    const url = new URL(req.url ?? "/", `http://localhost:${DASHBOARD_PORT}`);
+    const url = new URL(req.url ?? "/", `http://localhost:${listenPort}`);
 
     try {
       if (url.pathname === "/" || url.pathname === "/dashboard") {
@@ -290,16 +291,16 @@ export function startStatusServer(): void {
     }
   });
 
-  _server.listen(DASHBOARD_PORT, "127.0.0.1", () => {
-    process.stderr.write(`[dashboard] Running at http://localhost:${DASHBOARD_PORT}\n`);
+  _server.listen(listenPort, "127.0.0.1", () => {
+    process.stderr.write(`[dashboard] Running at http://localhost:${listenPort}\n`);
   });
 
   _server.on("error", (e: NodeJS.ErrnoException) => {
     if (e.code === "EADDRINUSE") {
-      process.stderr.write(`[dashboard] Port ${DASHBOARD_PORT} in use – retrying in 30s.\n`);
+      process.stderr.write(`[dashboard] Port ${listenPort} in use – retrying in 30s.\n`);
       _server?.close();
       _server = null;
-      setTimeout(() => startStatusServer(), 30_000);
+      setTimeout(() => startStatusServer(listenPort), 30_000);
     }
   });
 }

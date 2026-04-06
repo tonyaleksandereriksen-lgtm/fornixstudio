@@ -111,8 +111,8 @@ test("buildProducerPlan returns a plan for critique-drop", async () => {
   assert.ok(plan.summary.length > 0);
   assert.ok(Array.isArray(plan.suggestions));
   assert.ok(plan.suggestions.length >= 2, "Should have at least 2 suggestions");
-  assert.ok(Array.isArray(plan.capabilityReport));
-  assert.ok(plan.capabilityReport.length > 0);
+  assert.ok(Array.isArray(plan.capabilities));
+  assert.ok(plan.capabilities.length > 0);
 });
 
 test("buildProducerPlan critique-drop: suggestions have required fields", async () => {
@@ -227,8 +227,8 @@ test("buildProducerPlan critique-drop with limited capabilities produces preview
   }
 
   // Capability report should be present
-  assert.ok(Array.isArray(plan.capabilityReport));
-  assert.ok(plan.capabilityReport.length > 0);
+  assert.ok(Array.isArray(plan.capabilities));
+  assert.ok(plan.capabilities.length > 0);
 });
 
 // ─── Response contract stability ────────────────────────────────────────────
@@ -247,6 +247,22 @@ test("every VALID_INTENT_ID produces a plan with the stable contract", async () 
   for (const intentId of VALID_INTENT_IDS) {
     const plan = await buildProducerPlan(adapter, { id: intentId });
 
+    // Versioned contract envelope
+    assert.equal(plan.schemaVersion, "1", `${intentId}: schemaVersion must be "1"`);
+    assert.equal(plan.previewOnly, true, `${intentId}: previewOnly must be true`);
+    assert.equal(typeof plan.adapterId, "string", `${intentId}: adapterId must be string`);
+    assert.ok(plan.adapterId.length > 0, `${intentId}: adapterId must not be empty`);
+
+    // Plan metadata
+    assert.equal(typeof plan.planId, "string", `${intentId}: planId must be string`);
+    assert.ok(plan.planId.startsWith("plan-"), `${intentId}: planId must start with "plan-"`);
+    assert.equal(typeof plan.generatedAt, "string", `${intentId}: generatedAt must be string`);
+    assert.ok(!isNaN(Date.parse(plan.generatedAt)), `${intentId}: generatedAt must be valid ISO date`);
+
+    // History metadata
+    assert.ok(plan.history, `${intentId}: history must be present`);
+    assert.equal(plan.history.status, "preview-only", `${intentId}: history.status must be "preview-only"`);
+
     // Required string fields
     assert.equal(typeof plan.intentId, "string", `${intentId}: intentId must be string`);
     assert.equal(plan.intentId, intentId, `${intentId}: intentId must match input`);
@@ -258,8 +274,15 @@ test("every VALID_INTENT_ID produces a plan with the stable contract", async () 
     // Required arrays
     assert.ok(Array.isArray(plan.warnings), `${intentId}: warnings must be array`);
     assert.ok(Array.isArray(plan.suggestions), `${intentId}: suggestions must be array`);
-    assert.ok(Array.isArray(plan.capabilityReport), `${intentId}: capabilityReport must be array`);
-    assert.ok(plan.capabilityReport.length > 0, `${intentId}: capabilityReport must not be empty`);
+    assert.ok(Array.isArray(plan.capabilities), `${intentId}: capabilities must be array`);
+    assert.ok(plan.capabilities.length > 0, `${intentId}: capabilities must not be empty`);
+
+    // Capabilities must be full DawCapability objects
+    for (const cap of plan.capabilities) {
+      assert.equal(typeof cap.name, "string", `${intentId}: capability.name must be string`);
+      assert.ok(["none", "read", "write"].includes(cap.level), `${intentId}: invalid capability level "${cap.level}"`);
+      assert.ok(["proven", "partial", "blocked", "unknown"].includes(cap.status), `${intentId}: invalid capability status "${cap.status}"`);
+    }
 
     // Boolean field
     assert.equal(typeof plan.analysisAvailable, "boolean", `${intentId}: analysisAvailable must be boolean`);
@@ -275,8 +298,15 @@ test("every VALID_INTENT_ID produces a plan with the stable contract", async () 
       );
       // barRange, if present, must have start and end
       if (s.barRange) {
-        assert.equal(typeof s.barRange.start, "number", `${intentId}: barRange.start must be number`);
-        assert.equal(typeof s.barRange.end, "number", `${intentId}: barRange.end must be number`);
+        assert.equal(typeof s.barRange.startBar, "number", `${intentId}: barRange.startBar must be number`);
+        assert.equal(typeof s.barRange.endBar, "number", `${intentId}: barRange.endBar must be number`);
+      }
+      // actionState, if present, must be valid
+      if (s.actionState !== undefined) {
+        assert.ok(
+          ["preview-only", "unavailable"].includes(s.actionState),
+          `${intentId}: invalid actionState "${s.actionState}"`,
+        );
       }
     }
 
@@ -300,13 +330,15 @@ test("buildProducerPlan prepare-mastering returns enriched checklist", async () 
   assert.ok(plan.title.toLowerCase().includes("master"));
   assert.ok(plan.summary.length > 0, "Summary should not be empty");
 
-  // Should have at least 4 suggestions (headroom, bus cleanup, export, reference)
-  assert.ok(plan.suggestions.length >= 4, `Expected >= 4 suggestions, got ${plan.suggestions.length}`);
+  // Should have at least 5 suggestions (headroom, bus cleanup, track hygiene, low-end, export, reference)
+  assert.ok(plan.suggestions.length >= 5, `Expected >= 5 suggestions, got ${plan.suggestions.length}`);
 
   // Core suggestion IDs should be present
   const ids = plan.suggestions.map(s => s.id);
   assert.ok(ids.includes("master-headroom"), "Should include headroom check");
   assert.ok(ids.includes("master-bus-cleanup"), "Should include bus cleanup");
+  assert.ok(ids.includes("master-track-hygiene"), "Should include track hygiene");
+  assert.ok(ids.includes("master-low-end"), "Should include low-end check");
   assert.ok(ids.includes("master-export"), "Should include export settings");
   assert.ok(ids.includes("master-reference"), "Should include reference check");
 });
@@ -332,4 +364,72 @@ test("buildProducerPlan prepare-mastering warns about missing capabilities", asy
 
   // Without watcher, should warn about missing arrangement data
   assert.ok(plan.warnings.length > 0, "Should have warnings when nothing is connected");
+});
+
+// ─── Plan metadata: planId, generatedAt, history ────────────────────────────
+
+test("buildProducerPlan planId is unique across calls", async () => {
+  const adapter = new StudioOneAdapter();
+  const plan1 = await buildProducerPlan(adapter, { id: "session-overview" });
+  const plan2 = await buildProducerPlan(adapter, { id: "session-overview" });
+  assert.notEqual(plan1.planId, plan2.planId, "Each plan call must produce a unique planId");
+});
+
+test("buildProducerPlan planId contains the intent name", async () => {
+  const adapter = new StudioOneAdapter();
+  const plan = await buildProducerPlan(adapter, { id: "critique-drop" });
+  assert.ok(plan.planId.includes("critique-drop"), "planId should contain the intent name");
+});
+
+test("buildProducerPlan generatedAt is a recent ISO timestamp", async () => {
+  const before = Date.now();
+  const adapter = new StudioOneAdapter();
+  const plan = await buildProducerPlan(adapter, { id: "session-overview" });
+  const after = Date.now();
+
+  const ts = Date.parse(plan.generatedAt);
+  assert.ok(!isNaN(ts), "generatedAt must parse as a valid date");
+  assert.ok(ts >= before - 1000, "generatedAt should not be in the distant past");
+  assert.ok(ts <= after + 1000, "generatedAt should not be in the future");
+});
+
+test("buildProducerPlan history is always preview-only with no appliedAt", async () => {
+  const adapter = new StudioOneAdapter();
+  for (const intentId of VALID_INTENT_IDS) {
+    const plan = await buildProducerPlan(adapter, { id: intentId });
+    assert.equal(plan.history.status, "preview-only", `${intentId}: history.status`);
+    assert.equal(plan.history.appliedAt, undefined, `${intentId}: appliedAt must be undefined`);
+    assert.equal(plan.history.rollbackToken, undefined, `${intentId}: rollbackToken must be undefined`);
+  }
+});
+
+test("buildProducerPlan suggestions have actionState stamped", async () => {
+  const adapter = new StudioOneAdapter();
+  const plan = await buildProducerPlan(adapter, { id: "prepare-mastering" });
+
+  for (const s of plan.suggestions) {
+    assert.ok(s.actionState !== undefined, `Suggestion "${s.id}" should have actionState`);
+    assert.ok(
+      ["preview-only", "unavailable"].includes(s.actionState),
+      `Suggestion "${s.id}" has invalid actionState: ${s.actionState}`,
+    );
+  }
+});
+
+test("buildProducerPlan diagnostic suggestions are marked unavailable", async () => {
+  const adapter = new StudioOneAdapter();
+  const plan = await buildProducerPlan(adapter, { id: "session-overview" });
+
+  const overview = plan.suggestions.find(s => s.id === "overview-health");
+  assert.ok(overview, "overview-health suggestion must exist");
+  assert.equal(overview.actionState, "unavailable", "overview-health is diagnostic");
+});
+
+test("buildProducerPlan actionable suggestions are marked preview-only", async () => {
+  const adapter = new StudioOneAdapter();
+  const plan = await buildProducerPlan(adapter, { id: "prepare-mastering" });
+
+  const headroom = plan.suggestions.find(s => s.id === "master-headroom");
+  assert.ok(headroom, "master-headroom suggestion must exist");
+  assert.equal(headroom.actionState, "preview-only", "master-headroom is a future action candidate");
 });

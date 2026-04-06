@@ -1,4 +1,4 @@
-// ─── Fornix Studio – Producer Orchestrator ────────────────────────��──────────
+// ─── Fornix Studio – Producer Orchestrator ──────────────────────────────────
 //
 // Turns a producer intent into an actionable plan by:
 //   1. Querying the active adapter for capabilities and session state
@@ -6,12 +6,14 @@
 //   3. Producing a plan with concrete, confidence-rated suggestions
 //
 // This does NOT replace existing tools — it composes them into intent flows.
+// All plans are preview-only (schemaVersion "1", previewOnly: true).
 
-import { hasCapability, summarizeCapabilities } from "../daw/capabilities.js";
+import { hasCapability } from "../daw/capabilities.js";
 import type { DawAdapter, DawCapability, DawSessionSnapshot } from "../daw/types.js";
 import type {
   ProducerIntentInput,
   ProducerPlan,
+  ProducerPlanHistory,
   ProducerSuggestion,
   ProducerTargetSection,
 } from "./intents.js";
@@ -23,6 +25,42 @@ import {
   type Section,
 } from "../services/arrangement.js";
 import { getCurrentSnapshot } from "../services/song-watcher.js";
+import { getPackSuggestions, type PackSuggestion } from "./content-loader.js";
+
+// ─── Plan ID generation ─────────────────────────────────────────────────────
+
+let _planCounter = 0;
+
+/**
+ * Generate a deterministic, loggable plan ID.
+ * Format: `plan-{intentId}-{timestamp}-{seq}` — no external deps needed.
+ */
+function generatePlanId(intentId: string): string {
+  const ts = Date.now().toString(36);
+  const seq = (++_planCounter).toString(36);
+  return `plan-${intentId}-${ts}-${seq}`;
+}
+
+// ─── Shared plan base fields ────────────────────────────────────────────────
+
+/** Build the fixed envelope fields present on every plan. */
+function planEnvelope(
+  intentId: string,
+  adapterId: string,
+  capabilities: DawCapability[],
+): Pick<ProducerPlan, "schemaVersion" | "planId" | "generatedAt" | "previewOnly" | "adapterId" | "capabilities" | "history"> {
+  return {
+    schemaVersion: "1",
+    planId: generatePlanId(intentId),
+    generatedAt: new Date().toISOString(),
+    previewOnly: true,
+    adapterId,
+    capabilities,
+    history: { status: "preview-only" },
+  };
+}
+
+// ─── Entry point ────────────────────────────────────────────────────────────
 
 /**
  * Build a producer plan for the given intent using the active DAW adapter.
@@ -37,29 +75,83 @@ export async function buildProducerPlan(
     adapter.getSessionSnapshot(),
   ]);
 
-  const capabilityReport = summarizeCapabilities(capabilities);
+  const envelope = planEnvelope(input.id, adapter.id, capabilities);
   const baseWarnings = session.warnings.slice();
+
+  let plan: ProducerPlan;
 
   switch (input.id) {
     case "critique-drop":
-      return buildCritiqueDropPlan(capabilities, session, input, capabilityReport, baseWarnings);
+      plan = buildCritiqueDropPlan(envelope, capabilities, session, input, baseWarnings);
+      break;
     case "critique-arrangement":
-      return buildCritiqueArrangementPlan(capabilities, session, capabilityReport, baseWarnings);
+      plan = buildCritiqueArrangementPlan(envelope, capabilities, session, baseWarnings);
+      break;
     case "prepare-mastering":
-      return buildMasteringPrepPlan(capabilities, session, capabilityReport, baseWarnings);
+      plan = buildMasteringPrepPlan(envelope, capabilities, session, baseWarnings);
+      break;
     case "session-overview":
-      return buildSessionOverviewPlan(capabilities, session, capabilityReport, baseWarnings);
+      plan = buildSessionOverviewPlan(envelope, capabilities, session, baseWarnings);
+      break;
     default:
-      return {
+      plan = {
+        ...envelope,
         intentId: input.id,
         title: `Intent: ${input.id}`,
         summary: `Intent "${input.id}" is recognized but not yet implemented in the orchestrator.`,
         warnings: [...baseWarnings, `No orchestration logic for intent "${input.id}" yet.`],
         suggestions: [],
-        capabilityReport,
         analysisAvailable: false,
       };
   }
+
+  // Stamp actionState on all suggestions before returning
+  stampActionState(plan.suggestions);
+  return plan;
+}
+
+type PlanEnvelope = ReturnType<typeof planEnvelope>;
+
+// ─── Action state stamping ──────────────────────────────────────────────────
+
+/** IDs of purely diagnostic suggestions that have no future action path. */
+const DIAGNOSTIC_SUGGESTION_IDS = new Set([
+  "drop-energy-arc",
+  "drop-length",
+  "drop-length-generic",
+  "arrangement-gaps",
+  "master-arrangement-length",
+  "master-structure-issue",
+  "overview-health",
+]);
+
+/**
+ * Stamp `actionState` on every suggestion that doesn't already have one.
+ *   • Suggestions with `actionId` or that are future action candidates → "preview-only"
+ *   • Purely diagnostic/observational suggestions → "unavailable"
+ */
+function stampActionState(suggestions: ProducerSuggestion[]): void {
+  for (const s of suggestions) {
+    if (s.actionState !== undefined) continue;
+    s.actionState = DIAGNOSTIC_SUGGESTION_IDS.has(s.id) ? "unavailable" : "preview-only";
+  }
+}
+
+// ─── Content-pack conversion helper ─────────────────────────────────────────
+
+/** Convert a PackSuggestion to a ProducerSuggestion, optionally adding barRange. */
+function packToSuggestion(
+  ps: PackSuggestion,
+  barRange?: { startBar: number; endBar: number },
+): ProducerSuggestion {
+  return {
+    id: ps.id,
+    title: ps.title,
+    rationale: ps.rationale,
+    confidence: ps.confidence,
+    tags: ps.tags,
+    ...(barRange ? { barRange } : {}),
+  };
 }
 
 // ─── Arrangement analysis helper ─────────────────────────────────────────────
@@ -85,10 +177,10 @@ function tryGetArrangementAnalysis(): { analysis: ArrangementAnalysis; summary: 
 // ─── Critique Drop ───────────────────────────────────────────────────────────
 
 function buildCritiqueDropPlan(
+  envelope: PlanEnvelope,
   capabilities: DawCapability[],
   session: DawSessionSnapshot,
   input: ProducerIntentInput,
-  capabilityReport: string[],
   warnings: string[],
 ): ProducerPlan {
   const canReadArrangement = hasCapability(capabilities, "arrangement.read");
@@ -121,13 +213,13 @@ function buildCritiqueDropPlan(
     : "No drop section found. Provide a targetSectionId or start the song watcher.";
 
   return {
+    ...envelope,
     intentId: "critique-drop",
     title: "Critique this drop",
     summary: summaryText,
     warnings,
     suggestions,
     targetSection: target.source !== "none" ? target : undefined,
-    capabilityReport,
     analysisAvailable,
   };
 }
@@ -224,7 +316,8 @@ function buildAnalysisBackedSuggestions(
         title: `${p.severity === "critical" ? "Fix" : "Review"}: ${p.problem}`,
         rationale: `${p.severity} issue at bar ${p.bar} in "${p.section}".`,
         confidence: p.severity === "critical" ? "high" : "medium",
-        barRange: { start: p.bar, end: p.bar + 8 },
+        barRange: { startBar: p.bar, endBar: p.bar + 8 },
+        tags: ["structure"],
       });
     }
   }
@@ -243,7 +336,8 @@ function buildAnalysisBackedSuggestions(
           ? `At ${target.lengthBars} bars, the drop may feel too short. Typical hardstyle drops are 16–32 bars.`
           : `At ${target.lengthBars} bars, the drop may lose momentum. Consider tightening to 32 bars max.`,
       confidence: "high",
-      barRange: { start: dropBar, end: dropEnd },
+      barRange: { startBar: dropBar, endBar: dropEnd },
+      tags: ["structure"],
     });
   }
 
@@ -255,6 +349,7 @@ function buildAnalysisBackedSuggestions(
       title: `Energy arc: ${arcVerdict}`,
       rationale: analysis.energyArc.assessment,
       confidence: arcVerdict === "strong" ? "high" : arcVerdict === "needs-work" ? "medium" : "high",
+      tags: ["energy"],
     });
   }
 
@@ -267,9 +362,10 @@ function buildAnalysisBackedSuggestions(
       rationale: `"${preDrop.name}" (${preDrop.lengthBars} bars) leads into the drop. Verify build tension, filter sweep, and impact contrast.`,
       confidence: "high",
       barRange: {
-        start: preDrop.startBar + preDrop.lengthBars - 4,
-        end: dropBar + 4,
+        startBar: preDrop.startBar + preDrop.lengthBars - 4,
+        endBar: dropBar + 4,
       },
+      tags: ["transition"],
     });
   }
 
@@ -283,7 +379,7 @@ function buildAnalysisBackedSuggestions(
       title: a.action,
       rationale: `Priority ${a.priority} action targeting bar ${a.targetBar} in "${a.section}".`,
       confidence: a.priority <= 2 ? "high" : "medium",
-      barRange: { start: a.targetBar, end: a.targetBar + 8 },
+      barRange: { startBar: a.targetBar, endBar: a.targetBar + 8 },
     });
   }
 
@@ -298,9 +394,16 @@ function buildAnalysisBackedSuggestions(
 /** Generic suggestions when no arrangement data is available. */
 function buildGenericDropSuggestions(target: ProducerTargetSection): ProducerSuggestion[] {
   const barRange = target.startBar > 0 && target.lengthBars > 0
-    ? { start: target.startBar, end: target.startBar + target.lengthBars }
+    ? { startBar: target.startBar, endBar: target.startBar + target.lengthBars }
     : undefined;
 
+  // Try content-pack first
+  const packItems = getPackSuggestions("critique-drop");
+  if (packItems.length > 0) {
+    return packItems.map((ps) => packToSuggestion(ps, barRange));
+  }
+
+  // Hardcoded fallback — identical to content/packs/producer-core/critique-drop.json
   return [
     {
       id: "drop-impact",
@@ -308,30 +411,35 @@ function buildGenericDropSuggestions(target: ProducerTargetSection): ProducerSug
       rationale: "Compare density, low-end handoff, and release against the pre-drop transition. The first beat of the drop should feel like a physical arrival.",
       confidence: "high",
       barRange,
+      tags: ["energy", "low-end"],
     },
     {
       id: "drop-hook",
       title: "Audit hook clarity",
       rationale: "Check for lead masking, over-stacked layers, and weak rhythmic anchors. The hook should be instantly identifiable.",
       confidence: "medium",
+      tags: ["mix"],
     },
     {
       id: "drop-energy",
       title: "Verify energy arc",
       rationale: "Ensure the drop delivers the energy promise set by the buildup. Flag anti-climax, over-compression, or missing low-end weight.",
       confidence: "high",
+      tags: ["energy"],
     },
     {
       id: "drop-length-generic",
       title: "Check drop duration",
       rationale: "Standard hardstyle drops are 16–32 bars. Too short loses impact; too long loses attention. Verify against your target structure.",
       confidence: "medium",
+      tags: ["structure"],
     },
     {
       id: "drop-mixdown",
       title: "Preview mix balance",
       rationale: "Solo the drop section and check kick/bass balance, lead presence, and stereo width against your reference tracks.",
       confidence: "medium",
+      tags: ["mix"],
     },
   ];
 }
@@ -342,12 +450,12 @@ function findSectionBefore(sections: Section[], targetName: string): Section | u
   return idx > 0 ? sections[idx - 1] : undefined;
 }
 
-// ─── Other intents (unchanged) ───────────────────────────────────────────────
+// ─── Critique Arrangement ───────────────────────────────────────────────────
 
 function buildCritiqueArrangementPlan(
+  envelope: PlanEnvelope,
   capabilities: DawCapability[],
   session: DawSessionSnapshot,
-  capabilityReport: string[],
   warnings: string[],
 ): ProducerPlan {
   const canReadArrangement = hasCapability(capabilities, "arrangement.read");
@@ -357,6 +465,7 @@ function buildCritiqueArrangementPlan(
   }
 
   return {
+    ...envelope,
     intentId: "critique-arrangement",
     title: "Critique arrangement",
     summary: `Analyze full arrangement structure (${session.sections.length} sections detected).`,
@@ -367,23 +476,26 @@ function buildCritiqueArrangementPlan(
         title: "Check section flow and pacing",
         rationale: "Verify intro length, build tension, drop duration, and breakdown placement against hardstyle conventions.",
         confidence: canReadArrangement ? "high" : "medium",
+        tags: ["structure"],
       },
       {
         id: "arrangement-gaps",
         title: "Detect gaps and redundancy",
         rationale: "Flag dead air, over-long sections, or repeated patterns that reduce impact.",
         confidence: "high",
+        tags: ["structure"],
       },
     ],
-    capabilityReport,
     analysisAvailable: canReadArrangement,
   };
 }
 
+// ─── Prepare Mastering ──────────────────────────────────────────────────────
+
 function buildMasteringPrepPlan(
+  envelope: PlanEnvelope,
   capabilities: DawCapability[],
   session: DawSessionSnapshot,
-  capabilityReport: string[],
   warnings: string[],
 ): ProducerPlan {
   const canReadSession = hasCapability(capabilities, "session.read");
@@ -416,23 +528,17 @@ function buildMasteringPrepPlan(
 
   const suggestions: ProducerSuggestion[] = [];
 
-  // 1. Headroom — always relevant
-  suggestions.push({
-    id: "master-headroom",
-    title: "Verify headroom and clipping risk",
-    rationale: "Check for limiter dependency on master bus, peak levels, and final export headroom target. " +
-      "Aim for -1 dB true peak with at least -6 dB RMS headroom for the mastering engineer.",
-    confidence: "high",
-  });
+  // ── Static suggestions from content pack (with hardcoded fallback) ────
+  const packItems = getPackSuggestions("prepare-mastering");
+  const staticSuggestions = packItems.length > 0
+    ? packItems.map((ps) => packToSuggestion(ps))
+    : masteringFallbackSuggestions(tempo);
 
-  // 2. Master bus cleanup — always relevant
-  suggestions.push({
-    id: "master-bus-cleanup",
-    title: "Review master bus chain",
-    rationale: "Flag processing that should be removed before mastering: limiters, saturators, wide EQ. " +
-      "Keep only intentional mix-glue processing (light bus compression, if any).",
-    confidence: "high",
-  });
+  // Insert static pack suggestions first (headroom, bus cleanup)
+  const headroom = staticSuggestions.find((s) => s.id === "master-headroom");
+  const busCleanup = staticSuggestions.find((s) => s.id === "master-bus-cleanup");
+  if (headroom) suggestions.push(headroom);
+  if (busCleanup) suggestions.push(busCleanup);
 
   // 3. Track count hygiene — session-aware
   if (trackCount > 0) {
@@ -453,7 +559,8 @@ function buildMasteringPrepPlan(
       title: `Track hygiene check (${trackCount} tracks)`,
       rationale: rationale + soloNote + muteNote +
         "Disable any track solo, confirm mute states, remove unused sends.",
-      confidence: trackCount > 0 ? "high" : "medium",
+      confidence: "high",
+      tags: ["session", "mix"],
     });
   }
 
@@ -474,7 +581,8 @@ function buildMasteringPrepPlan(
           ? `Track is short (${lengthStr}). Confirm this is intentional — short tracks may need tail padding for streaming platforms.`
           : `Track is long (${lengthStr}). Verify arrangement doesn't have unnecessary dead air or overly extended sections.`,
       confidence: "high",
-      barRange: { start: 1, end: arrangementData.summary.totalLengthBars },
+      barRange: { startBar: 1, endBar: arrangementData.summary.totalLengthBars },
+      tags: ["structure"],
     });
 
     // 5. Arrangement problems relevant to mastering
@@ -489,52 +597,63 @@ function buildMasteringPrepPlan(
         rationale: `${topProblem.severity} issue at bar ${topProblem.bar} in "${topProblem.section}". ` +
           "Structural problems should be resolved before printing for mastering.",
         confidence: "high",
-        barRange: { start: topProblem.bar, end: topProblem.bar + 8 },
+        barRange: { startBar: topProblem.bar, endBar: topProblem.bar + 8 },
+        tags: ["structure"],
       });
     }
   } else if (!canReadArrangement) {
     warnings.push("Start the song watcher for arrangement-aware mastering checks (track length, structural issues).");
   }
 
-  // 6. Export settings — always relevant
-  suggestions.push({
-    id: "master-export",
-    title: "Prepare export settings",
-    rationale: "Print checklist: 24-bit WAV, session sample rate (do not resample), " +
-      "tail long enough for reverb decay, name file clearly (Artist - Title - Mix Version).",
-    confidence: "high",
-  });
+  // Track hygiene fallback when no session data
+  if (trackCount === 0) {
+    suggestions.push({
+      id: "master-track-hygiene",
+      title: "Track hygiene check",
+      rationale: "No session data available. Manually verify: no soloed tracks, no unintended mutes, " +
+        "remove unused sends, and confirm all tracks are contributing to the mix.",
+      confidence: "low",
+      tags: ["session"],
+    });
+  }
 
-  // 7. Reference check — always relevant
-  suggestions.push({
-    id: "master-reference",
-    title: "Final reference check",
-    rationale: "A/B the mix against your reference tracks at matched loudness before printing. " +
-      "Check tonal balance, low-end weight, and stereo image. Flag anything that feels off before mastering.",
-    confidence: "medium",
-  });
+  // ── Remaining static suggestions from pack (low-end, export, handoff, reference)
+  const trailingIds = ["master-low-end", "master-export", "master-handoff", "master-reference"];
+  for (const id of trailingIds) {
+    const found = staticSuggestions.find((s) => s.id === id);
+    if (found) {
+      // Pack content doesn't know about runtime tempo — patch confidence for low-end
+      if (id === "master-low-end" && packItems.length > 0) {
+        found.confidence = tempo ? "high" : "medium";
+      }
+      suggestions.push(found);
+    }
+  }
 
   return {
+    ...envelope,
     intentId: "prepare-mastering",
     title: "Prepare for mastering",
     summary,
     warnings,
-    suggestions: suggestions.slice(0, 7),
-    capabilityReport,
+    suggestions: suggestions.slice(0, 9),
     analysisAvailable,
   };
 }
 
+// ─── Session Overview ───────────────────────────────────────────────────────
+
 function buildSessionOverviewPlan(
+  envelope: PlanEnvelope,
   capabilities: DawCapability[],
   session: DawSessionSnapshot,
-  capabilityReport: string[],
   warnings: string[],
 ): ProducerPlan {
   const trackCount = session.tracks.length;
   const sectionCount = session.sections.length;
 
   return {
+    ...envelope,
     intentId: "session-overview",
     title: "Session overview",
     summary: `${session.title ?? "Untitled"} — ${session.tempo ?? "?"} BPM, ${trackCount} tracks, ${sectionCount} sections.`,
@@ -545,9 +664,9 @@ function buildSessionOverviewPlan(
         title: "Session health check",
         rationale: `${trackCount} tracks detected. Review for unused tracks, routing issues, and organizational clarity.`,
         confidence: trackCount > 0 ? "high" : "low",
+        tags: ["session"],
       },
     ],
-    capabilityReport,
     analysisAvailable: false,
   };
 }

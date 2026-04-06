@@ -122,6 +122,15 @@
     margin-top: 0.5rem;
   }
   .plan-analysis .live { color: var(--ok); }
+  .plan-meta { font-size: 0.7rem; color: var(--muted); margin-top: 0.4rem; }
+  .plan-meta span { margin-right: 1rem; }
+  .action-state {
+    font-size: 0.6rem;
+    color: var(--muted);
+    margin-top: 0.15rem;
+    padding-left: 1.5rem;
+    font-style: italic;
+  }
 
   /* Target section */
   .target { display: flex; gap: 1rem; flex-wrap: wrap; }
@@ -305,6 +314,11 @@
     html += '<div class="plan-title">' + esc(plan.title) + '</div>';
     html += '<div class="plan-intent">' + esc(plan.intentId) + '</div>';
     html += '<div class="plan-summary">' + esc(plan.summary) + '</div>';
+    html += '<div class="plan-meta">';
+    if (plan.planId) html += '<span>ID: ' + esc(plan.planId) + '</span>';
+    if (plan.generatedAt) html += '<span>' + esc(plan.generatedAt) + '</span>';
+    if (plan.history) html += '<span>' + esc(plan.history.status) + '</span>';
+    html += '</div>';
     html += '<div class="plan-analysis">';
     if (plan.analysisAvailable) {
       html += 'Analysis: <span class="live">live arrangement data</span>';
@@ -351,32 +365,30 @@
         html += '</div>';
         html += '<div class="suggestion-rationale">' + esc(s.rationale) + '</div>';
         if (s.barRange) {
-          html += '<div class="suggestion-bars">Bars ' + s.barRange.start + '\u2013' + s.barRange.end + '</div>';
+          html += '<div class="suggestion-bars">Bars ' + s.barRange.startBar + '\u2013' + s.barRange.endBar + '</div>';
+        }
+        if (s.tags && s.tags.length > 0) {
+          html += '<div class="suggestion-bars">' + s.tags.map(esc).join(', ') + '</div>';
+        }
+        if (s.actionState) {
+          html += '<div class="action-state">' + esc(s.actionState) + '</div>';
         }
         html += '</div>';
       });
       html += '</div>';
     }
 
-    // Capability snapshot
-    if (plan.capabilityReport && plan.capabilityReport.length > 0) {
+    // Capability snapshot (full DawCapability objects)
+    if (plan.capabilities && plan.capabilities.length > 0) {
       html += '<div class="card">';
       html += '<div class="card-title">Capability Snapshot</div>';
       html += '<div class="cap-grid">';
-      plan.capabilityReport.forEach(function (line) {
-        // capabilityReport lines look like: "session.read: read/partial"
-        var parts = line.split(": ");
-        var name = parts[0] || line;
-        var rest = parts[1] || "";
-        var status = "unknown";
-        if (rest.indexOf("proven") !== -1) status = "proven";
-        else if (rest.indexOf("partial") !== -1) status = "partial";
-        else if (rest.indexOf("blocked") !== -1) status = "blocked";
-
+      plan.capabilities.forEach(function (cap) {
+        var status = cap.status || "unknown";
         html += '<div class="cap-item">';
-        html += '<span class="cap-badge ' + status + '"></span>';
-        html += '<span class="cap-name">' + esc(name) + '</span>';
-        html += '<span class="cap-level">' + esc(rest) + '</span>';
+        html += '<span class="cap-badge ' + esc(status) + '"></span>';
+        html += '<span class="cap-name">' + esc(cap.name) + '</span>';
+        html += '<span class="cap-level">' + esc(cap.level + '/' + status) + '</span>';
         html += '</div>';
       });
       html += '</div></div>';

@@ -3,18 +3,23 @@
 // High-level intents a producer would express. Each intent maps to a plan
 // that queries DAW capabilities and delegates to existing services.
 //
-// ── Response contract ────────────────────────────────────────────────────────
+// ── Response contract (schema version 1) ─────────────────────────────────────
 //
 // Every intent returns a ProducerPlan. The shape is stable and consumed by:
 //   • fornix_producer_plan MCP tool  (src/tools/producer.ts)
 //   • /api/producer-plan JSON route  (src/services/status-server.ts)
 //   • /producer HTML view            (creator-facing)
 //
+// The contract is versioned via `schemaVersion`. Consumers should check this
+// field before assuming the shape. All plans are preview-only (no DAW writes).
+//
 // Adding a new intent:
 //   1. Add the ID to ProducerIntentId
 //   2. Add a builder in orchestrator.ts
-//   3. Add it to the validIntents list in status-server.ts
+//   3. Add it to VALID_INTENT_IDS below
 //   4. No schema change needed — all intents return ProducerPlan.
+
+import type { DawCapability } from "../daw/types.js";
 
 /** Recognized producer intent identifiers. */
 export type ProducerIntentId =
@@ -62,8 +67,16 @@ export interface ProducerSuggestion {
   confidence: "low" | "medium" | "high";
   /** If set, this suggestion can be executed as a DAW action (future). */
   actionId?: string;
+  /**
+   * Readiness of this suggestion's action, if applicable.
+   *   • "preview-only" — meaningful future action candidate, not yet executable
+   *   • "unavailable"  — purely diagnostic, no action path planned
+   */
+  actionState?: "preview-only" | "unavailable";
   /** Bar range this suggestion targets, if applicable. */
-  barRange?: { start: number; end: number };
+  barRange?: { startBar: number; endBar: number };
+  /** Optional tags for categorization (e.g. "low-end", "structure", "export"). */
+  tags?: string[];
 }
 
 /**
@@ -81,14 +94,42 @@ export interface ProducerTargetSection {
 }
 
 /**
- * The stable response shape returned by every producer intent.
+ * Lightweight history/action metadata for a producer plan.
  *
- * This is the contract consumed by the MCP tool, JSON API, and HTML view.
+ * In the current preview-only phase, `status` is always "preview-only" and
+ * `appliedAt`/`rollbackToken` are always undefined.  These fields exist as
+ * stable attachment points for future apply/rollback/audit work.
+ */
+export interface ProducerPlanHistory {
+  /** Always "preview-only" in the current phase — no plans are applied. */
+  status: "preview-only";
+  /** Reserved: ISO timestamp when this plan was applied (future). */
+  appliedAt?: undefined;
+  /** Reserved: opaque token for rolling back an applied plan (future). */
+  rollbackToken?: undefined;
+  /** Optional human-readable note about this plan's lifecycle. */
+  note?: string;
+}
+
+/**
+ * The stable, versioned response shape returned by every producer intent.
+ *
+ * schema version 1 — consumed by MCP tool, JSON API, and HTML view.
  * All fields are always present (some may be empty arrays or undefined).
  */
 export interface ProducerPlan {
+  /** Schema version. Consumers should check this before assuming shape. */
+  schemaVersion: "1";
+  /** Stable identifier for this plan instance (intent + adapter + timestamp hash). */
+  planId: string;
+  /** ISO 8601 timestamp of when this plan was generated. */
+  generatedAt: string;
   /** Which intent produced this plan. */
   intentId: ProducerIntentId;
+  /** Always true — producer plans are preview-only, no DAW writes. */
+  previewOnly: true;
+  /** Which DAW adapter produced this plan (e.g. "studio-one-7"). */
+  adapterId: string;
   /** Human-readable plan title. */
   title: string;
   /** One-line summary of what the plan covers. */
@@ -99,8 +140,10 @@ export interface ProducerPlan {
   suggestions: ProducerSuggestion[];
   /** The section this plan targets, if applicable (section-specific intents). */
   targetSection?: ProducerTargetSection;
-  /** One-line summaries of capabilities that were checked. */
-  capabilityReport: string[];
+  /** Full capability snapshot from the active DAW adapter. */
+  capabilities: DawCapability[];
   /** Whether live arrangement analysis was available and used. */
   analysisAvailable: boolean;
+  /** History/action metadata — preview-only in current phase. */
+  history: ProducerPlanHistory;
 }

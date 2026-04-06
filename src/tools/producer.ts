@@ -54,15 +54,16 @@ export function registerProducerTools(server: McpServer): void {
       targetSectionId,
     });
 
-    const capabilities = await adapter.getCapabilities();
-
     // ── Format response ──────────────────────────────────────────────────
     const lines: string[] = [
       `═══ Producer Plan: ${plan.title} ═══`,
-      "[Preview Only — no actions will be executed]",
+      `[Preview Only — schema v${plan.schemaVersion}]`,
       "",
-      `Adapter: ${adapter.displayName} (${adapter.id})`,
+      `Plan ID: ${plan.planId}`,
+      `Generated: ${plan.generatedAt}`,
+      `Adapter: ${plan.adapterId}`,
       `Intent: ${plan.intentId}`,
+      `Status: ${plan.history.status}`,
       `Analysis: ${plan.analysisAvailable ? "live arrangement data" : "generic guidance (no watcher data)"}`,
       "",
     ];
@@ -95,17 +96,23 @@ export function registerProducerTools(server: McpServer): void {
         lines.push(`  ${i + 1}. [${s.confidence.toUpperCase()}] ${s.title}`);
         lines.push(`     ${s.rationale}`);
         if (s.barRange) {
-          lines.push(`     Bars: ${s.barRange.start}–${s.barRange.end}`);
+          lines.push(`     Bars: ${s.barRange.startBar}–${s.barRange.endBar}`);
+        }
+        if (s.tags && s.tags.length > 0) {
+          lines.push(`     Tags: ${s.tags.join(", ")}`);
         }
         if (s.actionId) {
           lines.push(`     Action: ${s.actionId} (preview only)`);
+        }
+        if (s.actionState) {
+          lines.push(`     State: ${s.actionState}`);
         }
       }
       lines.push("");
     }
 
     lines.push("── Capability Snapshot ──");
-    for (const cap of capabilities) {
+    for (const cap of plan.capabilities) {
       const badge = cap.status === "proven" ? "✓"
         : cap.status === "partial" ? "~"
         : cap.status === "blocked" ? "✗"
